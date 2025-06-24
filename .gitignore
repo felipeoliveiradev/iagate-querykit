@@ -1,0 +1,25 @@
+# dependencies
+node_modules
+
+# builds
+dist
+build
+
+# tests
+coverage
+
+# macOS
+.DS_Store
+
+# logs
+*.log
+
+# package
+*.tgz
+
+# ts
+tsconfig.tsbuildinfo
+
+# env
+.env
+.env.*
