@@ -186,3 +186,183 @@ Common tasks:
 
 MIT
 
+---
+
+## Advanced Examples with Expected Output
+
+### 1) Tracking: dry-run mutations with virtual table state
+
+```ts
+import { QueryBuilder, simulationManager } from '@iagate/querykit'
+
+await simulationManager.start({
+  users: [
+    { id: 1, email: 'a@b.com', active: 1 },
+    { id: 2, email: 'c@d.com', active: 0 },
+  ],
+})
+
+const q = new QueryBuilder<{ id: number; email: string; active: number }>('users')
+  .insert({ id: 3, email: 'x@y.com', active: 1 })
+
+await q.initial().tracking()
+
+// Expected virtual state for 'users' (no real DB touched):
+// [
+//   { id: 1, email: 'a@b.com', active: 1 },
+//   { id: 2, email: 'c@d.com', active: 0 },
+//   { id: 3, email: 'x@y.com', active: 1 },
+// ]
+
+simulationManager.stop()
+```
+
+### 2) Parallel orchestration (reads and writes mixed)
+
+```ts
+import { parallel, QueryBuilder } from '@iagate/querykit'
+
+const results = await parallel(
+  new QueryBuilder('users').select(['id']).orderBy('id', 'DESC').limit(2),
+  new QueryBuilder('orders').insert({ id: 10, amount: 99 }),
+)
+
+// Expected:
+// results[0] -> last 2 users rows
+// results[1] -> { changes: 1, lastInsertRowid: 10 }
+```
+
+### 3) Multi-database fan-out
+
+```ts
+import { MultiDatabaseManager } from '@iagate/querykit'
+
+const multi = MultiDatabaseManager.getInstance({
+  defaultDatabase: 'primary',
+  databases: {
+    primary: { name: 'primary', type: 'sqlite', filePath: 'db1.sqlite' },
+    analytics: { name: 'analytics', type: 'sqlite', filePath: 'db2.sqlite' },
+  },
+})
+
+await multi.initialize(({ filePath }) => new BetterSqlite3Executor(filePath!))
+
+const out = await multi.executeOnMultiple([
+  'primary',
+  'analytics',
+], 'SELECT COUNT(*) as c FROM users')
+
+// Expected shape:
+// {
+//   primary:  { data: [{ c: 42 }] },
+//   analytics:{ data: [{ c: 42 }] },
+// }
+```
+
+### 4) Unions and pagination
+
+```ts
+import { QueryBuilder } from '@iagate/querykit'
+
+const a = new QueryBuilder('users').select(['id', 'email']).where('active', '=', 1)
+const b = new QueryBuilder('users').select(['id', 'email']).where('active', '=', 0)
+
+const unioned = a.unionAll(b).orderBy('id', 'DESC').paginate(2, 10)
+const { sql, bindings } = unioned.toSql()
+
+// Expected SQL:
+// (SELECT id, email FROM users WHERE id = ? /*...*/ ) UNION ALL (SELECT ...) ORDER BY id DESC LIMIT ? OFFSET ?
+// Expected bindings length: >= 3
+```
+
+### 5) Aggregations with CASE expressions
+
+```ts
+import { QueryBuilder } from '@iagate/querykit'
+
+const q = new QueryBuilder('users')
+  .selectCount('*', 'total')
+  .selectCaseSum('active = 1', 'active_count')
+
+const { sql } = q.toSql()
+// Expected SQL contains:
+// SELECT COUNT(*) AS total, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS active_count FROM users
+```
+
+### 6) Range and period helpers
+
+```ts
+import { QueryBuilder } from '@iagate/querykit'
+
+const last7d = new QueryBuilder('logins')
+  .period('created_at', '7d')
+  .select(['id'])
+
+const last24h = new QueryBuilder('logins')
+  .period('created_at', '24h')
+  .select(['id'])
+
+// Expected: Both produce WHERE created_at >= ? ISO timestamp bounds
+```
+
+### 7) Views + scheduled refresh with ViewManager
+
+```ts
+import { ViewManager, QueryBuilder } from '@iagate/querykit'
+
+const views = new ViewManager()
+const q = new QueryBuilder('events')
+  .select(['user_id'])
+  .whereRaw('timestamp >= datetime("now", "-1 day")')
+
+views.createOrReplaceView('active_last_day', q)
+views.scheduleViewRefresh('active_last_day', q, 15 * 60 * 1000)
+
+// Expected: a SQLite view named active_last_day exists and will refresh every 15m
+```
+
+### 8) Triggers with BEFORE/AFTER timing
+
+```ts
+import { TriggerManager } from '@iagate/querykit'
+
+const triggers = new TriggerManager()
+triggers.createTrigger(
+  'orders_set_updated_at',
+  'orders',
+  'BEFORE',
+  'UPDATE',
+  `SET NEW.updated_at = CURRENT_TIMESTAMP;`
+)
+
+// Expected: a trigger exists in sqlite_master for 'orders_set_updated_at'
+```
+
+### 9) Models and fillable/guarded fields
+
+```ts
+import { Model } from '@iagate/querykit'
+
+class User extends Model {
+  protected static tableName = 'users'
+  protected fillable = ['email', 'active']
+}
+
+const u = new User()
+u.fill({ id: 999, email: 'x@y.com', active: 1 })
+await u.save()
+
+// Expected: INSERT only email and active (id is guarded)
+```
+
+### 10) Table helper
+
+```ts
+import { table } from '@iagate/querykit'
+
+const Users = table<{ id: number; email: string }>('users')
+const first = Users.orderBy('id', 'ASC').firstSync<{ id: number; email: string }>()
+
+// Expected: { id, email } of the first row
+```
+

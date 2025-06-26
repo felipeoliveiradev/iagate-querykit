@@ -1,24 +1,80 @@
 {
   "name": "@iagate/querykit",
   "version": "0.1.0",
+  "description": "QueryKit: lightweight TypeScript query toolkit with models, views, triggers, events, scheduler and adapters (better-sqlite3).",
   "private": false,
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
-  "sideEffects": false,
-  "files": ["dist"],
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "clean": "rimraf dist",
-    "test": "vitest run",
-    "test:watch": "vitest"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   },
-  "author": "",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "query",
+    "query-builder",
+    "sql",
+    "sqlite",
+    "better-sqlite3",
+    "trigger",
+    "view",
+    "model",
+    "orm",
+    "typescript",
+    "node"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm test",
+    "prepack": "npm run clean && npm run build && npm run test"
+  },
+  "author": "Felipe Oliveira <felipeoliveiradeveloper@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/felipeoliveiradev/iagate-querykit.git",
+    "directory": "packages/querykit"
+  },
+  "bugs": {
+    "url": "https://github.com/felipeoliveiradev/iagate-querykit/issues"
+  },
+  "homepage": "https://github.com/felipeoliveiradev/iagate-querykit/tree/main/packages/querykit#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "npm@10",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/felipeoliveira"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "better-sqlite3": ">=9"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "typescript": "^5.4.0",
+    "@types/node": "^22.17.1",
     "rimraf": "^5.0.5",
+    "typescript": "^5.4.0",
     "vitest": "^2.0.5"
   }
-} 
+}
