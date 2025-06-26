@@ -1,5 +1,4 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
@@ -8,9 +7,11 @@
     "composite": false,
     "emitDeclarationOnly": false,
     "module": "ESNext",
-    "target": "ES2020",
+    "target": "ES2022",
     "moduleResolution": "Bundler",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "lib": ["es2022"],
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]
