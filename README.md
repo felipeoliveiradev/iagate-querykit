@@ -5,7 +5,7 @@ Minimal, typed building blocks for SQL-centric data apps in TypeScript. Compose 
 ### Install
 
 ```bash
-npm install @iagate/querykit
+npm install iagate-querykit
 # optional peer
 npm install better-sqlite3
 ```
@@ -23,8 +23,8 @@ npm install better-sqlite3
 ### Configure an executor
 
 ```ts
-import { setDefaultExecutor } from '@iagate/querykit'
-import { BetterSqlite3Executor } from '@iagate/querykit/adapters/better-sqlite3'
+import { setDefaultExecutor } from 'iagate-querykit'
+import { BetterSqlite3Executor } from 'iagate-querykit/adapters/better-sqlite3'
 
 setDefaultExecutor(new BetterSqlite3Executor('app.sqlite'))
 ```
@@ -32,7 +32,7 @@ setDefaultExecutor(new BetterSqlite3Executor('app.sqlite'))
 ### Queries
 
 ```ts
-import { QueryBuilder } from '@iagate/querykit'
+import { QueryBuilder } from 'iagate-querykit'
 
 // SELECT id, email FROM users WHERE active = 1 ORDER BY created_at DESC LIMIT 50
 const users = await new QueryBuilder<{ id: number; email: string; active: number }>('users')
@@ -54,7 +54,7 @@ await new QueryBuilder('users').where('id', '=', 2).delete().make()
 ### Raw expressions, IN/NULL/BETWEEN, subqueries
 
 ```ts
-import { raw, QueryBuilder } from '@iagate/querykit'
+import { raw, QueryBuilder } from 'iagate-querykit'
 
 const rows = await new QueryBuilder('users')
   .select(['id'])
@@ -73,7 +73,7 @@ const exists = await new QueryBuilder('users').whereExists(sub).limit(1).exists(
 ### Views
 
 ```ts
-import { ViewManager, QueryBuilder } from '@iagate/querykit'
+import { ViewManager, QueryBuilder } from 'iagate-querykit'
 
 const views = new ViewManager()
 views.createOrReplaceView(
@@ -92,7 +92,7 @@ views.scheduleViewRefresh(
 ### Triggers (SQLite)
 
 ```ts
-import { TriggerManager } from '@iagate/querykit'
+import { TriggerManager } from 'iagate-querykit'
 
 const triggers = new TriggerManager()
 triggers.createTrigger(
@@ -109,7 +109,7 @@ triggers.createTrigger(
 ### Scheduler
 
 ```ts
-import { scheduler } from '@iagate/querykit'
+import { scheduler } from 'iagate-querykit'
 
 scheduler.schedule('nightly-maintenance', () => {
   // rotate tokens, refresh views, etc.
@@ -119,7 +119,7 @@ scheduler.schedule('nightly-maintenance', () => {
 ### Parallel
 
 ```ts
-import { parallel, QueryBuilder } from '@iagate/querykit'
+import { parallel, QueryBuilder } from 'iagate-querykit'
 
 const [recentUsers, topOrders] = await parallel(
   new QueryBuilder('users').select(['id']).orderBy('created_at', 'DESC').limit(10),
@@ -130,7 +130,7 @@ const [recentUsers, topOrders] = await parallel(
 ### Simulation (dry-run)
 
 ```ts
-import { simulationManager, QueryBuilder } from '@iagate/querykit'
+import { simulationManager, QueryBuilder } from 'iagate-querykit'
 
 await simulationManager.start({
   users: [
@@ -156,7 +156,7 @@ simulationManager.stop()
 ### Multi-database execution
 
 ```ts
-import { MultiDatabaseManager } from '@iagate/querykit'
+import { MultiDatabaseManager } from 'iagate-querykit'
 
 const multi = MultiDatabaseManager.getInstance({
   defaultDatabase: 'primary',
@@ -193,7 +193,7 @@ MIT
 ### 1) Tracking: dry-run mutations with virtual table state
 
 ```ts
-import { QueryBuilder, simulationManager } from '@iagate/querykit'
+import { QueryBuilder, simulationManager } from 'iagate-querykit'
 
 await simulationManager.start({
   users: [
@@ -220,7 +220,7 @@ simulationManager.stop()
 ### 2) Parallel orchestration (reads and writes mixed)
 
 ```ts
-import { parallel, QueryBuilder } from '@iagate/querykit'
+import { parallel, QueryBuilder } from 'iagate-querykit'
 
 const results = await parallel(
   new QueryBuilder('users').select(['id']).orderBy('id', 'DESC').limit(2),
@@ -235,7 +235,7 @@ const results = await parallel(
 ### 3) Multi-database fan-out
 
 ```ts
-import { MultiDatabaseManager } from '@iagate/querykit'
+import { MultiDatabaseManager } from 'iagate-querykit'
 
 const multi = MultiDatabaseManager.getInstance({
   defaultDatabase: 'primary',
@@ -262,7 +262,7 @@ const out = await multi.executeOnMultiple([
 ### 4) Unions and pagination
 
 ```ts
-import { QueryBuilder } from '@iagate/querykit'
+import { QueryBuilder } from 'iagate-querykit'
 
 const a = new QueryBuilder('users').select(['id', 'email']).where('active', '=', 1)
 const b = new QueryBuilder('users').select(['id', 'email']).where('active', '=', 0)
@@ -278,7 +278,7 @@ const { sql, bindings } = unioned.toSql()
 ### 5) Aggregations with CASE expressions
 
 ```ts
-import { QueryBuilder } from '@iagate/querykit'
+import { QueryBuilder } from 'iagate-querykit'
 
 const q = new QueryBuilder('users')
   .selectCount('*', 'total')
@@ -292,7 +292,7 @@ const { sql } = q.toSql()
 ### 6) Range and period helpers
 
 ```ts
-import { QueryBuilder } from '@iagate/querykit'
+import { QueryBuilder } from 'iagate-querykit'
 
 const last7d = new QueryBuilder('logins')
   .period('created_at', '7d')
@@ -308,7 +308,7 @@ const last24h = new QueryBuilder('logins')
 ### 7) Views + scheduled refresh with ViewManager
 
 ```ts
-import { ViewManager, QueryBuilder } from '@iagate/querykit'
+import { ViewManager, QueryBuilder } from 'iagate-querykit'
 
 const views = new ViewManager()
 const q = new QueryBuilder('events')
@@ -324,7 +324,7 @@ views.scheduleViewRefresh('active_last_day', q, 15 * 60 * 1000)
 ### 8) Triggers with BEFORE/AFTER timing
 
 ```ts
-import { TriggerManager } from '@iagate/querykit'
+import { TriggerManager } from 'iagate-querykit'
 
 const triggers = new TriggerManager()
 triggers.createTrigger(
@@ -341,7 +341,7 @@ triggers.createTrigger(
 ### 9) Models and fillable/guarded fields
 
 ```ts
-import { Model } from '@iagate/querykit'
+import { Model } from 'iagate-querykit'
 
 class User extends Model {
   protected static tableName = 'users'
@@ -358,7 +358,7 @@ await u.save()
 ### 10) Table helper
 
 ```ts
-import { table } from '@iagate/querykit'
+import { table } from 'iagate-querykit'
 
 const Users = table<{ id: number; email: string }>('users')
 const first = Users.orderBy('id', 'ASC').firstSync<{ id: number; email: string }>()
