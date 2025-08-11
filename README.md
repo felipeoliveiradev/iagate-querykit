@@ -20,6 +20,79 @@ npm install better-sqlite3
 - `MultiDatabaseManager`: Register and execute against multiple adapters.
 - `BetterSqlite3Executor`: DatabaseExecutor for `better-sqlite3`.
 
+---
+
+## API catalog (by module)
+
+### QueryBuilder<T>(tableName: string)
+- Construction: `new QueryBuilder<T>(table)`
+- Tracking/virtual: `initial(data?)`, `tracking()`
+- Select: `select(columns)`, `selectRaw(sql)`, `aggregatesSelect(columns)`, `distinct()`
+- Write ops (deferred): `insert(data)`, `update(data)`, `delete()`, `updateOrInsert(attrs, values)`, `increment(column, amount?)`, `decrement(column, amount?)`
+- Where (basic and helpers):
+  - `where(column, op, value)`, `orWhere(column, op, value)`, `whereIf(condition, ...)`, `whereAll(conditions)`
+  - IN/NULL/BETWEEN: `whereIn`, `orWhereIn`, `whereNotIn`, `orWhereNotIn`, `whereNull`, `orWhereNull`, `whereNotNull`, `orWhereNotNull`, `whereBetween`, `whereNotBetween`
+  - Column compare: `whereColumn(first, op, second)`
+  - Raw/exists: `whereRaw(sql, bindings?, logical?)`, `whereRawSearch(searchTerm, columns)`, `whereExists(query)`, `whereNotExists(query)`
+  - Fuzzy helpers: `whereLike`, `orWhereLike`, `whereContains`, `whereStartsWith`, `whereEndsWith`, `whereILike`, `whereContainsCI`, `whereStartsWithCI`, `whereEndsWithCI`, `whereSearch`
+- When/unless/clone: `when(condition, cb)`, `unless(condition, cb)`, `clone()`
+- Join: `innerJoin(table, on)`, `leftJoin(table, on)`, `rightJoin(table, on)`, `innerJoinOn(left, right)`, `leftJoinOn(left, right)`, `rightJoinOn(left, right)`
+- Order/paging/group/having: `orderBy(column, dir?)`, `orderByMany([{ column, direction? }])`, `limit(n)`, `offset(n)`, `groupBy(columns)`, `groupByOne(column)`, `having(column, op, value)`, `havingRaw(sql, bindings?, logical?)`, `havingIf(condition, column, op, value)`
+- Aggregates: `count(column?, alias?)`, `sum(column, alias?)`, `avg(column, alias?)`, `min(column, alias?)`, `max(column, alias?)`, `selectExpression(expr, alias?)`, `selectCount`, `selectSum`, `selectAvg`, `selectMin`, `selectMax`, `selectCaseSum(conditionSql, alias)`
+- Time helpers: `paginate(page?, perPage?)`, `range(field, start?, end?)`, `period(field, key?)`
+- Union: `union(query)`, `unionAll(query)`
+- Compile: `toSql(): { sql, bindings }`
+- Execute async: `all<U= T>()`, `exists()`, `pluck(column)`
+- Execute sync: `run()`, `allSync<U>()`, `getSync<U>()`, `firstSync<U>()`, `pluckSync(column)`, `scalarSync<U>(alias?)`
+- Fetch one/find: `get<U>()`, `first<U>()`, `find(id)`
+- Write now: `make()`
+
+### ViewManager
+- `createOrReplaceView(viewName, query)`
+- `scheduleViewRefresh(viewName, query, intervalMs)`
+- `unscheduleViewRefresh(viewName)`
+- `dropView(viewName)`
+- `listViews(): string[]`
+- `viewExists(viewName): boolean`
+- `view<T>(viewName): QueryBuilder<T>`
+
+### TriggerManager (SQLite)
+- `createTrigger(name, table, timing: 'BEFORE'|'AFTER'|'INSTEAD OF', event: 'INSERT'|'UPDATE'|'DELETE', body)`
+- `dropTrigger(name)`
+- `listTriggers(): string[]`
+- `triggerExists(name): boolean`
+
+### scheduler
+- `schedule(name, task, intervalMs)`
+- `unschedule(name)`
+
+### parallel
+- `parallel(...queries: QueryBuilder[]): Promise<any[]>`
+
+### simulationManager
+- `isActive()`
+- `start(initialState: Record<string, any[] | QueryBuilder<any>>)`
+- `stop()`
+- `getStateFor(tableName)`
+- `updateStateFor(tableName, data)`
+
+### MultiDatabaseManager
+- `getInstance(config?)`
+- `initialize(createAdapter: (config) => BaseDatabaseAdapter)`
+- `getAdapter(name)` / `getDefaultAdapter()`
+- `executeOnMultiple(databaseNames, sql, params?) => Record<string, QueryResult>`
+
+### Config
+- `QueryKitConfig`: `{ defaultExecutor?, eventBus?, simulation?, multiDb? }`
+- Setters: `setDefaultExecutor(executor)`, `setEventBus(bus)`, `setSimulationController(sim)`, `setMultiDbRegistry(reg)`
+
+### Helpers
+- `raw(sql)`
+- `table<T>(tableName)` → `QueryBuilder<T>`
+- `Model`
+  - Static: `query<T>()`
+  - Instance: `fill(attrs)`, `save()`
+
 ### Configure an executor
 
 ```ts
