@@ -1,4 +1,4 @@
-## QueryKit (@iagate/querykit)
+## QueryKit (iagate-querykit)
 
 Minimal, typed building blocks for SQL-centric data apps in TypeScript. Compose queries with `QueryBuilder`, manage views and triggers, schedule jobs, run simulations, and route to one or multiple databases. Includes a `better-sqlite3` executor.
 
