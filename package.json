@@ -1,6 +1,6 @@
 {
   "name": "iagate-querykit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "QueryKit: lightweight TypeScript query toolkit with models, views, triggers, events, scheduler and adapters (better-sqlite3).",
   "private": false,
   "type": "module",
