@@ -1,0 +1,26 @@
+{
+  "id": "oracle",
+  "title": "Oracle",
+  "description": "Visão geral",
+  "source": "@site/docs/oracle.md",
+  "sourceDirName": ".",
+  "slug": "/oracle",
+  "permalink": "/iagate-querykit/oracle",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "oracle",
+    "title": "Oracle"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "PostgreSQL",
+    "permalink": "/iagate-querykit/postgresql"
+  },
+  "next": {
+    "title": "SQL Server",
+    "permalink": "/iagate-querykit/sqlserver"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "config",
+  "title": "Config",
+  "description": "QueryKitConfig e setters:",
+  "source": "@site/docs/config.md",
+  "sourceDirName": ".",
+  "slug": "/config",
+  "permalink": "/iagate-querykit/config",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "config",
+    "title": "Config"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Models",
+    "permalink": "/iagate-querykit/models"
+  },
+  "next": {
+    "title": "Event Manager",
+    "permalink": "/iagate-querykit/event-manager"
+  }
+}

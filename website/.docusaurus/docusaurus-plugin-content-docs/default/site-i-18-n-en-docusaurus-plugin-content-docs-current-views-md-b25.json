@@ -1,0 +1,26 @@
+{
+  "id": "views",
+  "title": "Views",
+  "description": "ViewManager gerencia views SQLite e refresh agendado.",
+  "source": "@site/i18n/en/docusaurus-plugin-content-docs/current/views.md",
+  "sourceDirName": ".",
+  "slug": "/views",
+  "permalink": "/iagate-querykit/en/views",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "views",
+    "title": "Views"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "SQL Server",
+    "permalink": "/iagate-querykit/en/sqlserver"
+  },
+  "next": {
+    "title": "Triggers (SQLite)",
+    "permalink": "/iagate-querykit/en/triggers-sql"
+  }
+}

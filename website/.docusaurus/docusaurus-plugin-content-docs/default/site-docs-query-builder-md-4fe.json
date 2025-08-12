@@ -1,0 +1,26 @@
+{
+  "id": "query-builder",
+  "title": "QueryBuilder",
+  "description": "O QueryBuilder(table) é a API fluente para construir SQL tipado e executar via um executor configurado.",
+  "source": "@site/docs/query-builder.md",
+  "sourceDirName": ".",
+  "slug": "/query-builder",
+  "permalink": "/iagate-querykit/query-builder",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "query-builder",
+    "title": "QueryBuilder"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Getting Started",
+    "permalink": "/iagate-querykit/getting-started"
+  },
+  "next": {
+    "title": "raw e table",
+    "permalink": "/iagate-querykit/raw-and-table"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "models-examples",
+  "title": "models-examples",
+  "description": "---",
+  "source": "@site/docs/models-examples.md",
+  "sourceDirName": ".",
+  "slug": "/models-examples",
+  "permalink": "/iagate-querykit/models-examples",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {}
+}

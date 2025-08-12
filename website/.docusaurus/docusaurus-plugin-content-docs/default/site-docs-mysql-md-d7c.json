@@ -1,0 +1,26 @@
+{
+  "id": "mysql",
+  "title": "MySQL",
+  "description": "Visão geral",
+  "source": "@site/docs/mysql.md",
+  "sourceDirName": ".",
+  "slug": "/mysql",
+  "permalink": "/iagate-querykit/mysql",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "mysql",
+    "title": "MySQL"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Multi-Database (fan‑out)",
+    "permalink": "/iagate-querykit/multi-db"
+  },
+  "next": {
+    "title": "PostgreSQL",
+    "permalink": "/iagate-querykit/postgresql"
+  }
+}

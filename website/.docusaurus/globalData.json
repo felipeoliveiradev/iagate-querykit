@@ -1,0 +1,128 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/iagate-querykit/es/",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/iagate-querykit/es/",
+          "mainDocId": "intro",
+          "docs": [
+            {
+              "id": "adapters-and-executors",
+              "path": "/iagate-querykit/es/adapters-and-executors",
+              "sidebar": "docs"
+            },
+            {
+              "id": "api",
+              "path": "/iagate-querykit/es/api",
+              "sidebar": "docs"
+            },
+            {
+              "id": "config",
+              "path": "/iagate-querykit/es/config",
+              "sidebar": "docs"
+            },
+            {
+              "id": "event-manager",
+              "path": "/iagate-querykit/es/event-manager",
+              "sidebar": "docs"
+            },
+            {
+              "id": "getting-started",
+              "path": "/iagate-querykit/es/getting-started",
+              "sidebar": "docs"
+            },
+            {
+              "id": "intro",
+              "path": "/iagate-querykit/es/",
+              "sidebar": "docs"
+            },
+            {
+              "id": "models",
+              "path": "/iagate-querykit/es/models",
+              "sidebar": "docs"
+            },
+            {
+              "id": "multi-db",
+              "path": "/iagate-querykit/es/multi-db",
+              "sidebar": "docs"
+            },
+            {
+              "id": "mysql",
+              "path": "/iagate-querykit/es/mysql",
+              "sidebar": "docs"
+            },
+            {
+              "id": "oracle",
+              "path": "/iagate-querykit/es/oracle",
+              "sidebar": "docs"
+            },
+            {
+              "id": "parallel",
+              "path": "/iagate-querykit/es/parallel",
+              "sidebar": "docs"
+            },
+            {
+              "id": "postgresql",
+              "path": "/iagate-querykit/es/postgresql",
+              "sidebar": "docs"
+            },
+            {
+              "id": "query-builder",
+              "path": "/iagate-querykit/es/query-builder",
+              "sidebar": "docs"
+            },
+            {
+              "id": "raw-and-table",
+              "path": "/iagate-querykit/es/raw-and-table",
+              "sidebar": "docs"
+            },
+            {
+              "id": "scheduler",
+              "path": "/iagate-querykit/es/scheduler",
+              "sidebar": "docs"
+            },
+            {
+              "id": "simulation",
+              "path": "/iagate-querykit/es/simulation",
+              "sidebar": "docs"
+            },
+            {
+              "id": "sqlserver",
+              "path": "/iagate-querykit/es/sqlserver",
+              "sidebar": "docs"
+            },
+            {
+              "id": "triggers-semantic",
+              "path": "/iagate-querykit/es/triggers-semantic",
+              "sidebar": "docs"
+            },
+            {
+              "id": "triggers-sql",
+              "path": "/iagate-querykit/es/triggers-sql",
+              "sidebar": "docs"
+            },
+            {
+              "id": "views",
+              "path": "/iagate-querykit/es/views",
+              "sidebar": "docs"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "docs": {
+              "link": {
+                "path": "/iagate-querykit/es/",
+                "label": "intro"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}

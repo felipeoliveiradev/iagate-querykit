@@ -1,0 +1,26 @@
+{
+  "id": "getting-started",
+  "title": "Comenzando",
+  "description": "Instalar",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/getting-started.md",
+  "sourceDirName": ".",
+  "slug": "/getting-started",
+  "permalink": "/iagate-querykit/es/getting-started",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "getting-started",
+    "title": "Comenzando"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "QueryKit",
+    "permalink": "/iagate-querykit/es/"
+  },
+  "next": {
+    "title": "QueryBuilder",
+    "permalink": "/iagate-querykit/es/query-builder"
+  }
+}

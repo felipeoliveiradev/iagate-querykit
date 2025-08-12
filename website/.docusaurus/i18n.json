@@ -1,0 +1,33 @@
+{
+  "defaultLocale": "pt",
+  "locales": [
+    "pt",
+    "en",
+    "es"
+  ],
+  "path": "i18n",
+  "currentLocale": "es",
+  "localeConfigs": {
+    "pt": {
+      "label": "Português",
+      "direction": "ltr",
+      "htmlLang": "pt",
+      "calendar": "gregory",
+      "path": "pt"
+    },
+    "en": {
+      "label": "English",
+      "direction": "ltr",
+      "htmlLang": "en",
+      "calendar": "gregory",
+      "path": "en"
+    },
+    "es": {
+      "label": "Español",
+      "direction": "ltr",
+      "htmlLang": "es",
+      "calendar": "gregory",
+      "path": "es"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "event-manager",
+  "title": "Gestor de Eventos",
+  "description": "eventManager provee on/off/emit local y delega a QueryKitConfig.eventBus si está configurado.",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/event-manager.md",
+  "sourceDirName": ".",
+  "slug": "/event-manager",
+  "permalink": "/iagate-querykit/es/event-manager",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "event-manager",
+    "title": "Gestor de Eventos"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Configuración",
+    "permalink": "/iagate-querykit/es/config"
+  },
+  "next": {
+    "title": "Adaptadores y Ejecutores",
+    "permalink": "/iagate-querykit/es/adapters-and-executors"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "parallel",
+  "title": "Paralelo",
+  "description": "Regla: si toSql() empieza con SELECT, usa .all(). En caso contrario, .run().",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/parallel.md",
+  "sourceDirName": ".",
+  "slug": "/parallel",
+  "permalink": "/iagate-querykit/es/parallel",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "parallel",
+    "title": "Paralelo"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Programador",
+    "permalink": "/iagate-querykit/es/scheduler"
+  },
+  "next": {
+    "title": "Simulación (dry‑run)",
+    "permalink": "/iagate-querykit/es/simulation"
+  }
+}

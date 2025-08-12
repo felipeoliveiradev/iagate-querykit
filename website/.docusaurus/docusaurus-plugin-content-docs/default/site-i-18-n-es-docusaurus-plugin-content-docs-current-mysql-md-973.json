@@ -1,0 +1,26 @@
+{
+  "id": "mysql",
+  "title": "MySQL",
+  "description": "Visión general",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/mysql.md",
+  "sourceDirName": ".",
+  "slug": "/mysql",
+  "permalink": "/iagate-querykit/es/mysql",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "mysql",
+    "title": "MySQL"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Multi-Base de Datos (fan‑out)",
+    "permalink": "/iagate-querykit/es/multi-db"
+  },
+  "next": {
+    "title": "PostgreSQL",
+    "permalink": "/iagate-querykit/es/postgresql"
+  }
+}

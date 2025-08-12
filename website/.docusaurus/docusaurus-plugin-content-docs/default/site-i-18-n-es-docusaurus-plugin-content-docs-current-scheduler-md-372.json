@@ -1,0 +1,26 @@
+{
+  "id": "scheduler",
+  "title": "Programador",
+  "description": "Ejemplos:",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/scheduler.md",
+  "sourceDirName": ".",
+  "slug": "/scheduler",
+  "permalink": "/iagate-querykit/es/scheduler",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "scheduler",
+    "title": "Programador"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Disparadores Semánticos",
+    "permalink": "/iagate-querykit/es/triggers-semantic"
+  },
+  "next": {
+    "title": "Paralelo",
+    "permalink": "/iagate-querykit/es/parallel"
+  }
+}

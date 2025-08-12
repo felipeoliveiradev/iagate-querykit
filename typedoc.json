@@ -1,0 +1,9 @@
+{
+  "entryPoints": ["src/index.ts"],
+  "tsconfig": "tsconfig.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "out": "website/docs/api",
+  "readme": "none",
+  "categorizeByGroup": false,
+  "cleanOutputDir": true
+} 

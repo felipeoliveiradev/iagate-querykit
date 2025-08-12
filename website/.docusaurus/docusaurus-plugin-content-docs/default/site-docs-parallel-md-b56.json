@@ -1,0 +1,26 @@
+{
+  "id": "parallel",
+  "title": "Paralelo",
+  "description": "Regra: se toSql() começar com SELECT, usa .all(). Caso contrário, .run().",
+  "source": "@site/docs/parallel.md",
+  "sourceDirName": ".",
+  "slug": "/parallel",
+  "permalink": "/iagate-querykit/parallel",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "parallel",
+    "title": "Paralelo"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Scheduler",
+    "permalink": "/iagate-querykit/scheduler"
+  },
+  "next": {
+    "title": "Simulação (dry‑run)",
+    "permalink": "/iagate-querykit/simulation"
+  }
+}

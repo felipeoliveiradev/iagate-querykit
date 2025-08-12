@@ -1,0 +1,26 @@
+{
+  "id": "triggers-sql",
+  "title": "Triggers (SQLite)",
+  "description": "TriggerManager (nível SQL) cria e remove triggers diretamente no SQLite.",
+  "source": "@site/docs/triggers-sql.md",
+  "sourceDirName": ".",
+  "slug": "/triggers-sql",
+  "permalink": "/iagate-querykit/triggers-sql",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "triggers-sql",
+    "title": "Triggers (SQLite)"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Views",
+    "permalink": "/iagate-querykit/views"
+  },
+  "next": {
+    "title": "Triggers Semânticos",
+    "permalink": "/iagate-querykit/triggers-semantic"
+  }
+}

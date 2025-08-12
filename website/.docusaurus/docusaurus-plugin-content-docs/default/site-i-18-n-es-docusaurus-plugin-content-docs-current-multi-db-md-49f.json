@@ -1,0 +1,26 @@
+{
+  "id": "multi-db",
+  "title": "Multi-Base de Datos (fan‑out)",
+  "description": "MultiDatabaseManager orquesta múltiples bases de datos.",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/multi-db.md",
+  "sourceDirName": ".",
+  "slug": "/multi-db",
+  "permalink": "/iagate-querykit/es/multi-db",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "multi-db",
+    "title": "Multi-Base de Datos (fan‑out)"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Adaptadores y Ejecutores",
+    "permalink": "/iagate-querykit/es/adapters-and-executors"
+  },
+  "next": {
+    "title": "MySQL",
+    "permalink": "/iagate-querykit/es/mysql"
+  }
+}

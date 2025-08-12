@@ -1,0 +1,26 @@
+{
+  "id": "views",
+  "title": "Vistas",
+  "description": "ViewManager gestiona vistas SQLite y su actualización programada.",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/views.md",
+  "sourceDirName": ".",
+  "slug": "/views",
+  "permalink": "/iagate-querykit/es/views",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "views",
+    "title": "Vistas"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "SQL Server",
+    "permalink": "/iagate-querykit/es/sqlserver"
+  },
+  "next": {
+    "title": "Disparadores (SQLite)",
+    "permalink": "/iagate-querykit/es/triggers-sql"
+  }
+}

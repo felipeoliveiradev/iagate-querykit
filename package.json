@@ -39,7 +39,13 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm test",
-    "prepack": "npm run clean && npm run build && npm run test"
+    "prepack": "npm run clean && npm run build && npm run test",
+    "docs:dev": "docusaurus start website",
+    "docs:build": "docusaurus build website",
+    "docs:serve": "docusaurus serve website",
+    "docs": "npm run docs:build",
+    "api:docs": "typedoc",
+    "docs:all": "npm run api:docs && npm run docs:build"
   },
   "author": "Felipe Oliveira <felipeoliveiradeveloper@gmail.com>",
   "license": "MIT",
@@ -72,9 +78,37 @@
     }
   },
   "devDependencies": {
+    "@docusaurus/core": "^3.8.1",
+    "@docusaurus/preset-classic": "^3.8.1",
+    "@docusaurus/theme-search-algolia": "^3.8.1",
     "@types/node": "^22.17.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "rimraf": "^5.0.5",
+    "typedoc": "^0.26.11",
+    "typedoc-plugin-markdown": "^4.8.1",
     "typescript": "^5.4.0",
     "vitest": "^2.0.5"
+  },
+  "vitest": {
+    "coverage": {
+      "provider": "v8",
+      "all": true,
+      "include": [
+        "src/**/*.ts"
+      ],
+      "exclude": [
+        "**/node_modules/**",
+        "**/dist/**",
+        "website/**",
+        "website",
+        "website/build",
+        "**/website/**",
+        "**/website/build/**",
+        "src/index.ts",
+        "src/types.ts"
+      ],
+      "extension": [".ts"]
+    }
   }
 }

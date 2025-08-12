@@ -1,0 +1,26 @@
+{
+  "id": "raw-and-table",
+  "title": "raw e table",
+  "description": "raw(sql) e table(name) são utilitários para composição.",
+  "source": "@site/docs/raw-and-table.md",
+  "sourceDirName": ".",
+  "slug": "/raw-and-table",
+  "permalink": "/iagate-querykit/raw-and-table",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "raw-and-table",
+    "title": "raw e table"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "QueryBuilder",
+    "permalink": "/iagate-querykit/query-builder"
+  },
+  "next": {
+    "title": "Models",
+    "permalink": "/iagate-querykit/models"
+  }
+}

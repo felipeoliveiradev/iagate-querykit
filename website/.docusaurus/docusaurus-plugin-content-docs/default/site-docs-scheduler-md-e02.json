@@ -1,0 +1,26 @@
+{
+  "id": "scheduler",
+  "title": "Scheduler",
+  "description": "Exemplos:",
+  "source": "@site/docs/scheduler.md",
+  "sourceDirName": ".",
+  "slug": "/scheduler",
+  "permalink": "/iagate-querykit/scheduler",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "scheduler",
+    "title": "Scheduler"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Triggers Semânticos",
+    "permalink": "/iagate-querykit/triggers-semantic"
+  },
+  "next": {
+    "title": "Paralelo",
+    "permalink": "/iagate-querykit/parallel"
+  }
+}

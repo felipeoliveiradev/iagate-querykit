@@ -1,0 +1,26 @@
+{
+  "id": "adapters-and-executors",
+  "title": "Adapters and Executors",
+  "description": "DatabaseExecutor (for QueryBuilder)",
+  "source": "@site/i18n/en/docusaurus-plugin-content-docs/current/adapters-and-executors.md",
+  "sourceDirName": ".",
+  "slug": "/adapters-and-executors",
+  "permalink": "/iagate-querykit/en/adapters-and-executors",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "adapters-and-executors",
+    "title": "Adapters and Executors"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Event Manager",
+    "permalink": "/iagate-querykit/en/event-manager"
+  },
+  "next": {
+    "title": "Multi-Database (fan‑out)",
+    "permalink": "/iagate-querykit/en/multi-db"
+  }
+}

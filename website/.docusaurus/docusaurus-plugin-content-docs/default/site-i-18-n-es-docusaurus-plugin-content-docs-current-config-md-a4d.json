@@ -1,0 +1,26 @@
+{
+  "id": "config",
+  "title": "Configuración",
+  "description": "QueryKitConfig y setters:",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/config.md",
+  "sourceDirName": ".",
+  "slug": "/config",
+  "permalink": "/iagate-querykit/es/config",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "config",
+    "title": "Configuración"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Modelos",
+    "permalink": "/iagate-querykit/es/models"
+  },
+  "next": {
+    "title": "Gestor de Eventos",
+    "permalink": "/iagate-querykit/es/event-manager"
+  }
+}

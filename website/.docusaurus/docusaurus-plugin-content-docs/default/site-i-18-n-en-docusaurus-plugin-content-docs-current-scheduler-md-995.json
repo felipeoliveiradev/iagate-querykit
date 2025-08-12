@@ -1,0 +1,26 @@
+{
+  "id": "scheduler",
+  "title": "Scheduler",
+  "description": "Examples:",
+  "source": "@site/i18n/en/docusaurus-plugin-content-docs/current/scheduler.md",
+  "sourceDirName": ".",
+  "slug": "/scheduler",
+  "permalink": "/iagate-querykit/en/scheduler",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "scheduler",
+    "title": "Scheduler"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Semantic Triggers",
+    "permalink": "/iagate-querykit/en/triggers-semantic"
+  },
+  "next": {
+    "title": "Parallel",
+    "permalink": "/iagate-querykit/en/parallel"
+  }
+}

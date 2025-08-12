@@ -1,0 +1,26 @@
+{
+  "id": "triggers-semantic",
+  "title": "Disparadores Semánticos",
+  "description": "Disparadores a nivel de aplicación con when, action, except, table y body.",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/triggers-semantic.md",
+  "sourceDirName": ".",
+  "slug": "/triggers-semantic",
+  "permalink": "/iagate-querykit/es/triggers-semantic",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "triggers-semantic",
+    "title": "Disparadores Semánticos"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Disparadores (SQLite)",
+    "permalink": "/iagate-querykit/es/triggers-sql"
+  },
+  "next": {
+    "title": "Programador",
+    "permalink": "/iagate-querykit/es/scheduler"
+  }
+}

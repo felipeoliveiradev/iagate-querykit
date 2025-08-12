@@ -1,0 +1,26 @@
+{
+  "id": "getting-started",
+  "title": "Getting Started",
+  "description": "Instalação",
+  "source": "@site/docs/getting-started.md",
+  "sourceDirName": ".",
+  "slug": "/getting-started",
+  "permalink": "/iagate-querykit/getting-started",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "getting-started",
+    "title": "Getting Started"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "QueryKit",
+    "permalink": "/iagate-querykit/"
+  },
+  "next": {
+    "title": "QueryBuilder",
+    "permalink": "/iagate-querykit/query-builder"
+  }
+}

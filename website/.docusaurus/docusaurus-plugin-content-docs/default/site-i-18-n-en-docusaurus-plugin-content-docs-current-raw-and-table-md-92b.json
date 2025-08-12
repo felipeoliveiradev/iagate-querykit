@@ -1,0 +1,26 @@
+{
+  "id": "raw-and-table",
+  "title": "raw and table",
+  "description": "raw(sql) and table(name) are helpers for composition.",
+  "source": "@site/i18n/en/docusaurus-plugin-content-docs/current/raw-and-table.md",
+  "sourceDirName": ".",
+  "slug": "/raw-and-table",
+  "permalink": "/iagate-querykit/en/raw-and-table",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "raw-and-table",
+    "title": "raw and table"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "QueryBuilder",
+    "permalink": "/iagate-querykit/en/query-builder"
+  },
+  "next": {
+    "title": "Models",
+    "permalink": "/iagate-querykit/en/models"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "query-builder-examples",
+  "title": "query-builder-examples",
+  "description": "---",
+  "source": "@site/docs/query-builder-examples.md",
+  "sourceDirName": ".",
+  "slug": "/query-builder-examples",
+  "permalink": "/iagate-querykit/query-builder-examples",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {}
+}

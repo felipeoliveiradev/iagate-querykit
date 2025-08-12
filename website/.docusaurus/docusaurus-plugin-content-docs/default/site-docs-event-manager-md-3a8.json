@@ -1,0 +1,26 @@
+{
+  "id": "event-manager",
+  "title": "Event Manager",
+  "description": "eventManager provê on/off/emit local e delega para QueryKitConfig.eventBus (se configurado).",
+  "source": "@site/docs/event-manager.md",
+  "sourceDirName": ".",
+  "slug": "/event-manager",
+  "permalink": "/iagate-querykit/event-manager",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "event-manager",
+    "title": "Event Manager"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Config",
+    "permalink": "/iagate-querykit/config"
+  },
+  "next": {
+    "title": "Adapters e Executors",
+    "permalink": "/iagate-querykit/adapters-and-executors"
+  }
+}

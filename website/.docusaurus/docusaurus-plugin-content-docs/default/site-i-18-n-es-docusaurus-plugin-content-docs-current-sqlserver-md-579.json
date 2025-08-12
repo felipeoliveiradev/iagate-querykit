@@ -1,0 +1,26 @@
+{
+  "id": "sqlserver",
+  "title": "SQL Server",
+  "description": "Visión general",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/sqlserver.md",
+  "sourceDirName": ".",
+  "slug": "/sqlserver",
+  "permalink": "/iagate-querykit/es/sqlserver",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "sqlserver",
+    "title": "SQL Server"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Oracle",
+    "permalink": "/iagate-querykit/es/oracle"
+  },
+  "next": {
+    "title": "Vistas",
+    "permalink": "/iagate-querykit/es/views"
+  }
+}

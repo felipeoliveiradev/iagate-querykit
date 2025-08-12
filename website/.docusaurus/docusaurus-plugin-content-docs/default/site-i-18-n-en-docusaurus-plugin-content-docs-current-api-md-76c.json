@@ -1,0 +1,22 @@
+{
+  "id": "api",
+  "title": "API Reference",
+  "description": "A referência completa da API é gerada automaticamente via TypeDoc.",
+  "source": "@site/i18n/en/docusaurus-plugin-content-docs/current/api.md",
+  "sourceDirName": ".",
+  "slug": "/api",
+  "permalink": "/iagate-querykit/en/api",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "api",
+    "title": "API Reference"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Simulation (dry‑run)",
+    "permalink": "/iagate-querykit/en/simulation"
+  }
+}

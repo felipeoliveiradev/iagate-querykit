@@ -1,0 +1,23 @@
+{
+  "id": "intro",
+  "title": "QueryKit",
+  "description": "QueryKit (iagate-querykit) ofrece bloques de construcción mínimos y tipados para apps de datos centradas en SQL:",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/intro.md",
+  "sourceDirName": ".",
+  "slug": "/",
+  "permalink": "/iagate-querykit/es/",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "intro",
+    "title": "QueryKit",
+    "slug": "/"
+  },
+  "sidebar": "docs",
+  "next": {
+    "title": "Comenzando",
+    "permalink": "/iagate-querykit/es/getting-started"
+  }
+}

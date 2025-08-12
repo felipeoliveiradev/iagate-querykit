@@ -1,0 +1,26 @@
+{
+  "id": "oracle",
+  "title": "Oracle",
+  "description": "Visión general",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/oracle.md",
+  "sourceDirName": ".",
+  "slug": "/oracle",
+  "permalink": "/iagate-querykit/es/oracle",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "oracle",
+    "title": "Oracle"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "PostgreSQL",
+    "permalink": "/iagate-querykit/es/postgresql"
+  },
+  "next": {
+    "title": "SQL Server",
+    "permalink": "/iagate-querykit/es/sqlserver"
+  }
+}

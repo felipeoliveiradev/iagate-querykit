@@ -1,0 +1,26 @@
+{
+  "id": "postgresql",
+  "title": "PostgreSQL",
+  "description": "Visión general",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/postgresql.md",
+  "sourceDirName": ".",
+  "slug": "/postgresql",
+  "permalink": "/iagate-querykit/es/postgresql",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "postgresql",
+    "title": "PostgreSQL"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "MySQL",
+    "permalink": "/iagate-querykit/es/mysql"
+  },
+  "next": {
+    "title": "Oracle",
+    "permalink": "/iagate-querykit/es/oracle"
+  }
+}

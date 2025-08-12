@@ -1,0 +1,26 @@
+{
+  "id": "models",
+  "title": "Modelos",
+  "description": "Model ofrece llenado seguro (fillable/guarded) y save()/delete() para insertar/actualizar/eliminar.",
+  "source": "@site/i18n/es/docusaurus-plugin-content-docs/current/models.md",
+  "sourceDirName": ".",
+  "slug": "/models",
+  "permalink": "/iagate-querykit/es/models",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "models",
+    "title": "Modelos"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "raw y table",
+    "permalink": "/iagate-querykit/es/raw-and-table"
+  },
+  "next": {
+    "title": "Configuración",
+    "permalink": "/iagate-querykit/es/config"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "sqlserver",
+  "title": "SQL Server",
+  "description": "Visão geral",
+  "source": "@site/docs/sqlserver.md",
+  "sourceDirName": ".",
+  "slug": "/sqlserver",
+  "permalink": "/iagate-querykit/sqlserver",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "sqlserver",
+    "title": "SQL Server"
+  },
+  "sidebar": "docs",
+  "previous": {
+    "title": "Oracle",
+    "permalink": "/iagate-querykit/oracle"
+  },
+  "next": {
+    "title": "Views",
+    "permalink": "/iagate-querykit/views"
+  }
+}
