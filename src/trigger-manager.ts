@@ -99,7 +99,7 @@ export class TriggerManager {
     return Array.from(TriggerManager.semantic.keys());
   }
 
-  // SQL-level triggers (SQLite)
+  // SQL-level triggers (multi-vendor)
   public createTrigger(name: string, tableName: string, timing: TriggerTiming, event: TriggerEvent, body: string): void {
     const createTriggerSql = `
       CREATE TRIGGER IF NOT EXISTS ${name}
@@ -109,29 +109,77 @@ export class TriggerManager {
         ${body}
       END;
     `;
-    const exec = QueryKitConfig.defaultExecutor;
-    if (!exec || !exec.runSync) throw new Error('No executor configured for QueryKit');
-    exec.runSync(createTriggerSql, []);
+    const exec = QueryKitConfig.defaultExecutor as any;
+    if (!exec) throw new Error('No executor configured for QueryKit');
+    if (exec.runSync) exec.runSync(createTriggerSql, []);
+    else exec.executeQuery(createTriggerSql, []);
   }
 
   public dropTrigger(name: string): void {
     const dropTriggerSql = `DROP TRIGGER IF EXISTS ${name}`;
-    const exec = QueryKitConfig.defaultExecutor;
-    if (!exec || !exec.runSync) throw new Error('No executor configured for QueryKit');
-    exec.runSync(dropTriggerSql, []);
+    const exec = QueryKitConfig.defaultExecutor as any;
+    if (!exec) throw new Error('No executor configured for QueryKit');
+    if (exec.runSync) exec.runSync(dropTriggerSql, []);
+    else exec.executeQuery(dropTriggerSql, []);
+  }
+
+  private triggerQueriesByDialect(dialect?: string) {
+    switch (dialect) {
+      case 'sqlite': return [{ sql: "SELECT name FROM sqlite_master WHERE type='trigger'", map: (r: any) => r.name }];
+      case 'mysql': return [{ sql: "SELECT TRIGGER_NAME AS name FROM INFORMATION_SCHEMA.TRIGGERS", map: (r: any) => r.name }];
+      case 'postgres': return [{ sql: "SELECT tgname AS name FROM pg_trigger WHERE NOT tgisinternal", map: (r: any) => r.tgname || r.name }];
+      case 'mssql': return [{ sql: "SELECT name FROM sys.triggers", map: (r: any) => r.name }];
+      case 'oracle': return [{ sql: "SELECT TRIGGER_NAME AS name FROM USER_TRIGGERS", map: (r: any) => r.name }];
+      default:
+        return [
+          { sql: "SELECT name FROM sqlite_master WHERE type='trigger'", map: (r: any) => r.name },
+          { sql: "SELECT TRIGGER_NAME AS name FROM INFORMATION_SCHEMA.TRIGGERS", map: (r: any) => r.name },
+          { sql: "SELECT tgname AS name FROM pg_trigger WHERE NOT tgisinternal", map: (r: any) => r.tgname || r.name },
+          { sql: "SELECT name FROM sys.triggers", map: (r: any) => r.name },
+          { sql: "SELECT TRIGGER_NAME AS name FROM USER_TRIGGERS", map: (r: any) => r.name },
+        ];
+    }
   }
 
   public listTriggers(): string[] {
-    const exec = QueryKitConfig.defaultExecutor;
-    if (!exec || !exec.executeQuerySync) throw new Error('No executor configured for QueryKit');
-    const rows = exec.executeQuerySync("SELECT name FROM sqlite_master WHERE type='trigger'", []).data as any[];
-    return rows.map(row => row.name);
+    const exec = QueryKitConfig.defaultExecutor as any;
+    if (!exec) throw new Error('No executor configured for QueryKit');
+    if (!exec.executeQuerySync) return [];
+    const candidates = this.triggerQueriesByDialect(exec.dialect || (QueryKitConfig as any).defaultDialect);
+    for (const c of candidates) {
+      try {
+        const res = exec.executeQuerySync(c.sql, []);
+        const rows = (res?.data as any[]) || [];
+        const names = rows.map(c.map).filter(Boolean);
+        if (names.length || rows.length >= 0) return names;
+      } catch { /* try next */ }
+    }
+    return [];
   }
 
   public triggerExists(name: string): boolean {
-    const exec = QueryKitConfig.defaultExecutor;
-    if (!exec || !exec.executeQuerySync) throw new Error('No executor configured for QueryKit');
-    const row = exec.executeQuerySync("SELECT name FROM sqlite_master WHERE type='trigger' AND name= ?", [name]).data[0];
-    return !!row;
+    const names = this.listTriggers();
+    return names.includes(name);
+  }
+
+  public async listTriggersAsync(): Promise<string[]> {
+    const exec = QueryKitConfig.defaultExecutor as any;
+    if (!exec) throw new Error('No executor configured for QueryKit');
+    if (exec.executeQuerySync) return this.listTriggers();
+    const candidates = this.triggerQueriesByDialect(exec.dialect || (QueryKitConfig as any).defaultDialect);
+    for (const c of candidates) {
+      try {
+        const res = await exec.executeQuery(c.sql, []);
+        const rows = (res?.data as any[]) || [];
+        const names = rows.map(c.map).filter(Boolean);
+        if (names.length || rows.length >= 0) return names;
+      } catch { /* try next */ }
+    }
+    return [];
+  }
+
+  public async triggerExistsAsync(name: string): Promise<boolean> {
+    const names = await this.listTriggersAsync();
+    return names.includes(name);
   }
 } 
