@@ -230,12 +230,23 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
     const exec = QueryKitConfig.defaultExecutor;
     if (!exec) throw new Error('No executor configured for QueryKit');
     const { sql, bindings } = this.toSql();
+    eventManager.emit(`querykit:trigger:BEFORE:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'BEFORE', where: undefined } as any);
     const res = await exec.executeQuery(sql, bindings);
-    return res.data as U[];
+    const rows = res.data as U[];
+    eventManager.emit(`querykit:trigger:AFTER:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'AFTER', rows } as any);
+    return rows;
   }
 
   run(): any { const exec = QueryKitConfig.defaultExecutor; if (!exec || !exec.runSync) throw new Error('No executor configured for QueryKit'); const { sql, bindings } = this.toSql(); return exec.runSync(sql, bindings); }
-  allSync<U = T>(): U[] { const exec = QueryKitConfig.defaultExecutor; if (!exec || !exec.executeQuerySync) throw new Error('No executor configured for QueryKit'); const { sql, bindings } = this.toSql(); return exec.executeQuerySync(sql, bindings).data as U[]; }
+  allSync<U = T>(): U[] {
+    const exec = QueryKitConfig.defaultExecutor;
+    if (!exec || !exec.executeQuerySync) throw new Error('No executor configured for QueryKit');
+    const { sql, bindings } = this.toSql();
+    eventManager.emit(`querykit:trigger:BEFORE:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'BEFORE', where: undefined } as any);
+    const out = exec.executeQuerySync(sql, bindings).data as U[];
+    eventManager.emit(`querykit:trigger:AFTER:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'AFTER', rows: out } as any);
+    return out;
+  }
   getSync<U = T>(): U | undefined { this.limit(1); return this.allSync<U>()[0]; }
   firstSync<U = T>(): U | undefined { this.limit(1); return this.getSync<U>(); }
   pluckSync(column: keyof T | string): any[] { const rows = this.select([String(column)]).allSync<any>(); return rows.map(r => (r as any)[String(column)]); }
@@ -286,7 +297,9 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
         const values = Object.values(obj);
         const placeholders = columns.map(() => '?').join(', ');
         const sql = `INSERT INTO ${this.tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
+        eventManager.emit(`querykit:trigger:BEFORE:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'BEFORE', data: obj, where: undefined } as any);
         const res = exec.runSync(sql, values);
+        eventManager.emit(`querykit:trigger:AFTER:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'AFTER', data: obj, result: res } as any);
         this.pendingAction = undefined;
         return res;
       }
@@ -296,7 +309,9 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
         const params = Object.values(data);
         const where = this.buildWhereClause(this.whereClauses, params as any[], 'AND');
         const sql = `UPDATE ${this.tableName} SET ${setClauses} WHERE ${where}`;
+        eventManager.emit(`querykit:trigger:BEFORE:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'BEFORE', data, where: { sql: where, bindings: params } } as any);
         const res = exec.runSync(sql, params);
+        eventManager.emit(`querykit:trigger:AFTER:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'AFTER', data, where: { sql: where, bindings: params }, result: res } as any);
         this.pendingAction = undefined;
         return res;
       }
@@ -305,7 +320,9 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
         const params: any[] = [];
         const where = this.buildWhereClause(this.whereClauses, params, 'AND');
         const sql = `DELETE FROM ${this.tableName} WHERE ${where}`;
+        eventManager.emit(`querykit:trigger:BEFORE:DELETE:${this.tableName}`, { table: this.tableName, action: 'DELETE', timing: 'BEFORE', where: { sql: where, bindings: params } } as any);
         const res = exec.runSync(sql, params);
+        eventManager.emit(`querykit:trigger:AFTER:DELETE:${this.tableName}`, { table: this.tableName, action: 'DELETE', timing: 'AFTER', where: { sql: where, bindings: params }, result: res } as any);
         this.pendingAction = undefined;
         return res;
       }
