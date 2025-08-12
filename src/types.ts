@@ -5,6 +5,7 @@ export interface DatabaseExecutor {
   executeQuerySync?(sql: string, bindings: any[]): QueryResult;
   run?(sql: string, bindings: any[]): Promise<{ changes: number; lastInsertRowid: number | bigint }>;
   runSync?(sql: string, bindings: any[]): { changes: number; lastInsertRowid: number | bigint };
+  dialect?: 'sqlite' | 'mysql' | 'postgres' | 'mssql' | 'oracle';
 }
 
 export interface EventBus {

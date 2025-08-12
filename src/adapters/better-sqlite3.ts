@@ -6,7 +6,9 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
   private db: BetterSqlite3Database;
 
   constructor(dbFilePath: string) {
-    const mod = require('better-sqlite3');
+    const mocked = (globalThis as any).__vitest_mocks__?.betterSqlite3;
+    /* c8 ignore next */
+    const mod = mocked || require('better-sqlite3');
     this.db = new mod(dbFilePath);
   }
 
@@ -17,7 +19,7 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
       return { data };
     }
     const info = stmt.run(...bindings);
-    return { data: [], affectedRows: info.changes ?? info.changes, lastInsertId: info.lastInsertRowid };
+    return { data: [], affectedRows: info.changes, lastInsertId: info.lastInsertRowid };
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
@@ -27,6 +29,6 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
   runSync(sql: string, bindings: any[] = []) {
     const stmt = this.db.prepare(sql);
     const info = stmt.run(...bindings);
-    return { changes: info.changes ?? info.changes, lastInsertRowid: info.lastInsertRowid };
+    return { changes: info.changes, lastInsertRowid: info.lastInsertRowid };
   }
 } 
