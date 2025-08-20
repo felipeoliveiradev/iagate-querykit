@@ -41,7 +41,7 @@ class SimulationManager {
   }
 
   public stop(): void {
-    if (QueryKitConfig.simulation) return QueryKitConfig.simulation.stop() as any;
+    if (QueryKitConfig.simulation) { (QueryKitConfig.simulation.stop() as any); }
     this.active = false;
     this.virtualState.clear();
   }

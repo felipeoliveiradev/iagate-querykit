@@ -16,8 +16,8 @@
   },
   "sidebar": "docs",
   "previous": {
-    "title": "Event Manager",
-    "permalink": "/iagate-querykit/event-manager"
+    "title": "Migrações",
+    "permalink": "/iagate-querykit/migrations"
   },
   "next": {
     "title": "Multi-Database (fan‑out)",

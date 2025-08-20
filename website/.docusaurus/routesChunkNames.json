@@ -1,95 +1,142 @@
 {
-  "/iagate-querykit/es/-2e4": {
-    "__comp": "5e95c892",
+  "/iagate-querykit/__docusaurus/debug-96b": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
     "__context": {
-      "plugin": "aba21aa0"
+      "plugin": "plugin---iagate-querykit-docusaurus-debugb-38-b8c"
     }
   },
-  "/iagate-querykit/es/-9c3": {
-    "__comp": "a7bd4aaa",
-    "__props": "7135158d"
+  "/iagate-querykit/__docusaurus/debug/config-b1a": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
+    "__context": {
+      "plugin": "plugin---iagate-querykit-docusaurus-debugb-38-b8c"
+    }
   },
-  "/iagate-querykit/es/-7e4": {
-    "__comp": "a94703ab"
+  "/iagate-querykit/__docusaurus/debug/content-dd6": {
+    "__comp": "__comp---theme-debug-contentba-8-ce7",
+    "__context": {
+      "plugin": "plugin---iagate-querykit-docusaurus-debugb-38-b8c"
+    },
+    "__props": "__props---iagate-querykit-docusaurus-debug-contentfd-7-998"
   },
-  "/iagate-querykit/es/adapters-and-executors-6bc": {
-    "__comp": "17896441",
-    "content": "c1a1448f"
+  "/iagate-querykit/__docusaurus/debug/globalData-75c": {
+    "__comp": "__comp---theme-debug-global-dataede-0fa",
+    "__context": {
+      "plugin": "plugin---iagate-querykit-docusaurus-debugb-38-b8c"
+    }
   },
-  "/iagate-querykit/es/api-a10": {
-    "__comp": "17896441",
-    "content": "c55d2acb"
+  "/iagate-querykit/__docusaurus/debug/metadata-a1e": {
+    "__comp": "__comp---theme-debug-site-metadata-68-e-3d4",
+    "__context": {
+      "plugin": "plugin---iagate-querykit-docusaurus-debugb-38-b8c"
+    }
   },
-  "/iagate-querykit/es/config-b4e": {
-    "__comp": "17896441",
-    "content": "a4d3560b"
+  "/iagate-querykit/__docusaurus/debug/registry-22b": {
+    "__comp": "__comp---theme-debug-registry-679-501",
+    "__context": {
+      "plugin": "plugin---iagate-querykit-docusaurus-debugb-38-b8c"
+    }
   },
-  "/iagate-querykit/es/event-manager-1c4": {
-    "__comp": "17896441",
-    "content": "94236cd0"
+  "/iagate-querykit/__docusaurus/debug/routes-3e8": {
+    "__comp": "__comp---theme-debug-routes-946-699",
+    "__context": {
+      "plugin": "plugin---iagate-querykit-docusaurus-debugb-38-b8c"
+    }
   },
-  "/iagate-querykit/es/getting-started-441": {
-    "__comp": "17896441",
-    "content": "bf6e18ad"
+  "/iagate-querykit/-c64": {
+    "__comp": "__comp---theme-docs-root-5-e-9-0b6",
+    "__context": {
+      "plugin": "plugin---iagate-querykit-aba-ff4"
+    }
   },
-  "/iagate-querykit/es/models-aad": {
-    "__comp": "17896441",
-    "content": "254f61a5"
+  "/iagate-querykit/-835": {
+    "__comp": "__comp---theme-doc-version-roota-7-b-5de",
+    "__props": "__props---iagate-querykit-23-e-a15"
   },
-  "/iagate-querykit/es/multi-db-517": {
-    "__comp": "17896441",
-    "content": "49fd6f11"
+  "/iagate-querykit/-cbf": {
+    "__comp": "__comp---theme-doc-roota-94-67a"
   },
-  "/iagate-querykit/es/mysql-d89": {
-    "__comp": "17896441",
-    "content": "9733a231"
+  "/iagate-querykit/adapters-and-executors-3c3": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-adapters-and-executors-4-f-1-058"
   },
-  "/iagate-querykit/es/oracle-021": {
-    "__comp": "17896441",
-    "content": "c2b3a974"
+  "/iagate-querykit/api-142": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-api-5-fb-afc"
   },
-  "/iagate-querykit/es/parallel-884": {
-    "__comp": "17896441",
-    "content": "b385b2df"
+  "/iagate-querykit/config-98f": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-config-922-aff"
   },
-  "/iagate-querykit/es/postgresql-683": {
-    "__comp": "17896441",
-    "content": "1fe0f738"
+  "/iagate-querykit/event-manager-3e0": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-event-manager-3-a-8-931"
   },
-  "/iagate-querykit/es/query-builder-4ea": {
-    "__comp": "17896441",
-    "content": "158b616d"
+  "/iagate-querykit/getting-started-879": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-getting-startedd-58-a54"
   },
-  "/iagate-querykit/es/raw-and-table-8df": {
-    "__comp": "17896441",
-    "content": "4a6bf3bf"
+  "/iagate-querykit/migrations-c7d": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-migrationsd-04-2fe"
   },
-  "/iagate-querykit/es/scheduler-b70": {
-    "__comp": "17896441",
-    "content": "3720a2d8"
+  "/iagate-querykit/models-c94": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-models-6-f-8-1a0"
   },
-  "/iagate-querykit/es/simulation-7a6": {
-    "__comp": "17896441",
-    "content": "120aaf0e"
+  "/iagate-querykit/multi-db-7d1": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-multi-db-444-0fc"
   },
-  "/iagate-querykit/es/sqlserver-65b": {
-    "__comp": "17896441",
-    "content": "579a8db7"
+  "/iagate-querykit/mysql-461": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-mysqld-7-c-214"
   },
-  "/iagate-querykit/es/triggers-semantic-466": {
-    "__comp": "17896441",
-    "content": "7e3cf9f4"
+  "/iagate-querykit/oracle-ccb": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-oraclee-3-f-059"
   },
-  "/iagate-querykit/es/triggers-sql-dcf": {
-    "__comp": "17896441",
-    "content": "99e607d3"
+  "/iagate-querykit/parallel-e31": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-parallelb-56-8a5"
   },
-  "/iagate-querykit/es/views-fc7": {
-    "__comp": "17896441",
-    "content": "8bb53612"
+  "/iagate-querykit/postgresql-918": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-postgresql-668-d78"
   },
-  "/iagate-querykit/es/-e0d": {
-    "__comp": "17896441",
-    "content": "359fb69f"
+  "/iagate-querykit/query-builder-0b7": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-query-builder-4-fe-a7c"
+  },
+  "/iagate-querykit/raw-and-table-a83": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-raw-and-table-29-b-a5d"
+  },
+  "/iagate-querykit/scheduler-6ee": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-schedulere-02-40f"
+  },
+  "/iagate-querykit/simulation-5dc": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-simulation-2-fe-d42"
+  },
+  "/iagate-querykit/sqlserver-a6f": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-sqlservera-98-461"
+  },
+  "/iagate-querykit/triggers-semantic-83b": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-triggers-semantic-358-493"
+  },
+  "/iagate-querykit/triggers-sql-b51": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-triggers-sqlc-1-c-73a"
+  },
+  "/iagate-querykit/views-337": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-viewsd-59-c3e"
+  },
+  "/iagate-querykit/-43f": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---iagate-querykit-0-e-3-58c"
   }
 }

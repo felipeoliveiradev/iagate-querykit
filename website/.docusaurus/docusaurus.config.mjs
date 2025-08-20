@@ -7,7 +7,7 @@ export default {
   "title": "QueryKit",
   "tagline": "Minimal, typed building blocks for SQL-centric data apps in TypeScript",
   "url": "https://felipeoliveiradev.github.io",
-  "baseUrl": "/iagate-querykit/es/",
+  "baseUrl": "/iagate-querykit/",
   "onBrokenLinks": "throw",
   "onBrokenMarkdownLinks": "warn",
   "favicon": "img/favicon.ico",

@@ -1,11 +1,12 @@
 import type { DatabaseExecutor, QueryResult } from '../types';
+import { createRequire } from 'node:module';
 
 let oracledb: any;
 function ensureOracle() {
   if (oracledb) return;
   const mocked = (globalThis as any).__vitest_mocks__?.oracledb;
   if (mocked) { oracledb = mocked; return; }
-  try { oracledb = require('oracledb'); } catch { throw new Error('oracledb is required: npm install oracledb'); }
+  try { const req = createRequire(import.meta.url); oracledb = req('oracledb'); } catch { throw new Error('oracledb is required: npm install oracledb'); }
 }
 
 function toOracle(sql: string): { sql: string } {

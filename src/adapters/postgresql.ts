@@ -1,11 +1,12 @@
 import type { DatabaseExecutor, QueryResult } from '../types';
+import { createRequire } from 'node:module';
 
 let pg: any;
 function ensurePg() {
   if (pg) return;
   const mocked = (globalThis as any).__vitest_mocks__?.pg;
   if (mocked) { pg = mocked; return; }
-  try { pg = require('pg'); } catch { throw new Error('pg is required: npm install pg'); }
+  try { const req = createRequire(import.meta.url); pg = req('pg'); } catch { throw new Error('pg is required: npm install pg'); }
 }
 
 function toPgParams(sql: string): { sql: string } {

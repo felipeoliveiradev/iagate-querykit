@@ -1,4 +1,5 @@
 import type { DatabaseExecutor, QueryResult } from '../types';
+import { createRequire } from 'node:module';
 
 export type BetterSqlite3Database = any;
 
@@ -7,8 +8,9 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
 
   constructor(dbFilePath: string) {
     const mocked = (globalThis as any).__vitest_mocks__?.betterSqlite3;
+    const req = createRequire(import.meta.url);
     /* c8 ignore next */
-    const mod = mocked || require('better-sqlite3');
+    const mod = mocked || req('better-sqlite3');
     this.db = new mod(dbFilePath);
   }
 

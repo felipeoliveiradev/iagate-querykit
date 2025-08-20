@@ -1,6 +1,7 @@
 import { QueryKitConfig } from './config';
 import type { QueryBuilder } from './query-builder';
 import { scheduler } from './scheduler';
+import { table } from './table';
 
 function namesByDialect(dialect?: string) {
   switch (dialect) {
@@ -20,15 +21,37 @@ function namesByDialect(dialect?: string) {
   }
 }
 
+function escapeSqlLiteral(value: any): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'number' && isFinite(value)) return String(value);
+  if (typeof value === 'bigint') return String(value);
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (value instanceof Date) return `'${value.toISOString().replace(/'/g, "''")}'`;
+  if (Buffer && Buffer.isBuffer && Buffer.isBuffer(value)) return `X'${value.toString('hex')}'`;
+  if (typeof value === 'object') return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function inlineBindings(sql: string, bindings: any[]): string {
+  if (!bindings || bindings.length === 0) return sql;
+  let i = 0;
+  return sql.replace(/\?/g, () => {
+    if (i >= bindings.length) return '?';
+    const lit = escapeSqlLiteral(bindings[i++]);
+    return lit;
+  });
+}
+
 export class ViewManager {
   public async createOrReplaceView(viewName: string, query: QueryBuilder<any>): Promise<void> {
     const { sql, bindings } = query.toSql();
     await this.dropView(viewName);
-    const createViewSql = `CREATE VIEW ${viewName} AS ${sql}`;
+    const inlined = inlineBindings(sql, bindings);
+    const createViewSql = `CREATE VIEW ${viewName} AS ${inlined}`;
     const exec = QueryKitConfig.defaultExecutor as any;
     if (!exec) throw new Error('No executor configured for QueryKit');
-    if (exec.runSync) exec.runSync(createViewSql, bindings);
-    else await exec.executeQuery(createViewSql, bindings);
+    if (exec.runSync) exec.runSync(createViewSql, []);
+    else await exec.executeQuery(createViewSql, []);
   }
 
   public scheduleViewRefresh(viewName: string, query: QueryBuilder<any>, intervalMs: number): void {
@@ -91,7 +114,6 @@ export class ViewManager {
   }
 
   public view<T extends Record<string, any>>(viewName: string): QueryBuilder<T> {
-    const tableFactory: any = (QueryKitConfig as any).table;
-    return tableFactory(viewName) as QueryBuilder<T>;
+    return table<T>(viewName) as QueryBuilder<T>;
   }
 } 

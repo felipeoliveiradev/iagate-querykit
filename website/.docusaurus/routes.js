@@ -3,134 +3,175 @@ import ComponentCreator from '@docusaurus/ComponentCreator';
 
 export default [
   {
-    path: '/iagate-querykit/es/',
-    component: ComponentCreator('/iagate-querykit/es/', '2e4'),
+    path: '/iagate-querykit/__docusaurus/debug',
+    component: ComponentCreator('/iagate-querykit/__docusaurus/debug', '96b'),
+    exact: true
+  },
+  {
+    path: '/iagate-querykit/__docusaurus/debug/config',
+    component: ComponentCreator('/iagate-querykit/__docusaurus/debug/config', 'b1a'),
+    exact: true
+  },
+  {
+    path: '/iagate-querykit/__docusaurus/debug/content',
+    component: ComponentCreator('/iagate-querykit/__docusaurus/debug/content', 'dd6'),
+    exact: true
+  },
+  {
+    path: '/iagate-querykit/__docusaurus/debug/globalData',
+    component: ComponentCreator('/iagate-querykit/__docusaurus/debug/globalData', '75c'),
+    exact: true
+  },
+  {
+    path: '/iagate-querykit/__docusaurus/debug/metadata',
+    component: ComponentCreator('/iagate-querykit/__docusaurus/debug/metadata', 'a1e'),
+    exact: true
+  },
+  {
+    path: '/iagate-querykit/__docusaurus/debug/registry',
+    component: ComponentCreator('/iagate-querykit/__docusaurus/debug/registry', '22b'),
+    exact: true
+  },
+  {
+    path: '/iagate-querykit/__docusaurus/debug/routes',
+    component: ComponentCreator('/iagate-querykit/__docusaurus/debug/routes', '3e8'),
+    exact: true
+  },
+  {
+    path: '/iagate-querykit/',
+    component: ComponentCreator('/iagate-querykit/', 'c64'),
     routes: [
       {
-        path: '/iagate-querykit/es/',
-        component: ComponentCreator('/iagate-querykit/es/', '9c3'),
+        path: '/iagate-querykit/',
+        component: ComponentCreator('/iagate-querykit/', '835'),
         routes: [
           {
-            path: '/iagate-querykit/es/',
-            component: ComponentCreator('/iagate-querykit/es/', '7e4'),
+            path: '/iagate-querykit/',
+            component: ComponentCreator('/iagate-querykit/', 'cbf'),
             routes: [
               {
-                path: '/iagate-querykit/es/adapters-and-executors',
-                component: ComponentCreator('/iagate-querykit/es/adapters-and-executors', '6bc'),
+                path: '/iagate-querykit/adapters-and-executors',
+                component: ComponentCreator('/iagate-querykit/adapters-and-executors', '3c3'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/api',
-                component: ComponentCreator('/iagate-querykit/es/api', 'a10'),
+                path: '/iagate-querykit/api',
+                component: ComponentCreator('/iagate-querykit/api', '142'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/config',
-                component: ComponentCreator('/iagate-querykit/es/config', 'b4e'),
+                path: '/iagate-querykit/config',
+                component: ComponentCreator('/iagate-querykit/config', '98f'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/event-manager',
-                component: ComponentCreator('/iagate-querykit/es/event-manager', '1c4'),
+                path: '/iagate-querykit/event-manager',
+                component: ComponentCreator('/iagate-querykit/event-manager', '3e0'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/getting-started',
-                component: ComponentCreator('/iagate-querykit/es/getting-started', '441'),
+                path: '/iagate-querykit/getting-started',
+                component: ComponentCreator('/iagate-querykit/getting-started', '879'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/models',
-                component: ComponentCreator('/iagate-querykit/es/models', 'aad'),
+                path: '/iagate-querykit/migrations',
+                component: ComponentCreator('/iagate-querykit/migrations', 'c7d'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/multi-db',
-                component: ComponentCreator('/iagate-querykit/es/multi-db', '517'),
+                path: '/iagate-querykit/models',
+                component: ComponentCreator('/iagate-querykit/models', 'c94'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/mysql',
-                component: ComponentCreator('/iagate-querykit/es/mysql', 'd89'),
+                path: '/iagate-querykit/multi-db',
+                component: ComponentCreator('/iagate-querykit/multi-db', '7d1'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/oracle',
-                component: ComponentCreator('/iagate-querykit/es/oracle', '021'),
+                path: '/iagate-querykit/mysql',
+                component: ComponentCreator('/iagate-querykit/mysql', '461'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/parallel',
-                component: ComponentCreator('/iagate-querykit/es/parallel', '884'),
+                path: '/iagate-querykit/oracle',
+                component: ComponentCreator('/iagate-querykit/oracle', 'ccb'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/postgresql',
-                component: ComponentCreator('/iagate-querykit/es/postgresql', '683'),
+                path: '/iagate-querykit/parallel',
+                component: ComponentCreator('/iagate-querykit/parallel', 'e31'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/query-builder',
-                component: ComponentCreator('/iagate-querykit/es/query-builder', '4ea'),
+                path: '/iagate-querykit/postgresql',
+                component: ComponentCreator('/iagate-querykit/postgresql', '918'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/raw-and-table',
-                component: ComponentCreator('/iagate-querykit/es/raw-and-table', '8df'),
+                path: '/iagate-querykit/query-builder',
+                component: ComponentCreator('/iagate-querykit/query-builder', '0b7'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/scheduler',
-                component: ComponentCreator('/iagate-querykit/es/scheduler', 'b70'),
+                path: '/iagate-querykit/raw-and-table',
+                component: ComponentCreator('/iagate-querykit/raw-and-table', 'a83'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/simulation',
-                component: ComponentCreator('/iagate-querykit/es/simulation', '7a6'),
+                path: '/iagate-querykit/scheduler',
+                component: ComponentCreator('/iagate-querykit/scheduler', '6ee'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/sqlserver',
-                component: ComponentCreator('/iagate-querykit/es/sqlserver', '65b'),
+                path: '/iagate-querykit/simulation',
+                component: ComponentCreator('/iagate-querykit/simulation', '5dc'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/triggers-semantic',
-                component: ComponentCreator('/iagate-querykit/es/triggers-semantic', '466'),
+                path: '/iagate-querykit/sqlserver',
+                component: ComponentCreator('/iagate-querykit/sqlserver', 'a6f'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/triggers-sql',
-                component: ComponentCreator('/iagate-querykit/es/triggers-sql', 'dcf'),
+                path: '/iagate-querykit/triggers-semantic',
+                component: ComponentCreator('/iagate-querykit/triggers-semantic', '83b'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/views',
-                component: ComponentCreator('/iagate-querykit/es/views', 'fc7'),
+                path: '/iagate-querykit/triggers-sql',
+                component: ComponentCreator('/iagate-querykit/triggers-sql', 'b51'),
                 exact: true,
                 sidebar: "docs"
               },
               {
-                path: '/iagate-querykit/es/',
-                component: ComponentCreator('/iagate-querykit/es/', 'e0d'),
+                path: '/iagate-querykit/views',
+                component: ComponentCreator('/iagate-querykit/views', '337'),
+                exact: true,
+                sidebar: "docs"
+              },
+              {
+                path: '/iagate-querykit/',
+                component: ComponentCreator('/iagate-querykit/', '43f'),
                 exact: true,
                 sidebar: "docs"
               }

@@ -1,6 +1,6 @@
 {
   "name": "iagate-querykit",
-  "version": "0.1.4",
+  "version": "0.1.43",
   "description": "QueryKit: lightweight TypeScript query toolkit with models, views, triggers, events, scheduler and adapters (better-sqlite3).",
   "private": false,
   "type": "module",
@@ -12,7 +12,26 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./config": { "types": "./dist/config.d.ts", "import": "./dist/config.js" },
+    "./raw": { "types": "./dist/raw.d.ts", "import": "./dist/raw.js" },
+    "./scheduler": { "types": "./dist/scheduler.d.ts", "import": "./dist/scheduler.js" },
+    "./event-manager": { "types": "./dist/event-manager.d.ts", "import": "./dist/event-manager.js" },
+    "./simulation-manager": { "types": "./dist/simulation-manager.d.ts", "import": "./dist/simulation-manager.js" },
+    "./trigger-manager": { "types": "./dist/trigger-manager.d.ts", "import": "./dist/trigger-manager.js" },
+    "./view-manager": { "types": "./dist/view-manager.d.ts", "import": "./dist/view-manager.js" },
+    "./parallel-query": { "types": "./dist/parallel-query.d.ts", "import": "./dist/parallel-query.js" },
+    "./database-adapters/base-adapter": { "types": "./dist/database-adapters/base-adapter.d.ts", "import": "./dist/database-adapters/base-adapter.js" },
+    "./database-manager": { "types": "./dist/database-manager.d.ts", "import": "./dist/database-manager.js" },
+    "./query-builder": { "types": "./dist/query-builder.d.ts", "import": "./dist/query-builder.js" },
+    "./model": { "types": "./dist/model.d.ts", "import": "./dist/model.js" },
+    "./table": { "types": "./dist/table.d.ts", "import": "./dist/table.js" },
+    "./types": { "types": "./dist/types.d.ts", "import": "./dist/types.js" },
+    "./adapters/better-sqlite3": { "types": "./dist/adapters/better-sqlite3.d.ts", "import": "./dist/adapters/better-sqlite3.js" },
+    "./adapters/mysql": { "types": "./dist/adapters/mysql.d.ts", "import": "./dist/adapters/mysql.js" },
+    "./adapters/postgresql": { "types": "./dist/adapters/postgresql.d.ts", "import": "./dist/adapters/postgresql.js" },
+    "./adapters/oracle": { "types": "./dist/adapters/oracle.d.ts", "import": "./dist/adapters/oracle.js" },
+    "./adapters/sqlserver": { "types": "./dist/adapters/sqlserver.d.ts", "import": "./dist/adapters/sqlserver.js" }
   },
   "sideEffects": false,
   "files": [

@@ -1,11 +1,12 @@
 import type { DatabaseExecutor, QueryResult } from '../types';
+import { createRequire } from 'node:module';
 
 let mssql: any;
 function ensureMssql() {
   if (mssql) return;
   const mocked = (globalThis as any).__vitest_mocks__?.mssql;
   if (mocked) { mssql = mocked; return; }
-  try { mssql = require('mssql'); } catch { throw new Error('mssql is required: npm install mssql'); }
+  try { const req = createRequire(import.meta.url); mssql = req('mssql'); } catch { throw new Error('mssql is required: npm install mssql'); }
 }
 
 function toMssql(sql: string): { sql: string; paramNames: string[] } {

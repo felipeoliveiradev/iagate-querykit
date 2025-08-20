@@ -20,7 +20,7 @@
     "permalink": "/iagate-querykit/config"
   },
   "next": {
-    "title": "Adapters e Executors",
-    "permalink": "/iagate-querykit/adapters-and-executors"
+    "title": "Migrações",
+    "permalink": "/iagate-querykit/migrations"
   }
 }

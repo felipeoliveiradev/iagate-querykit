@@ -1,4 +1,5 @@
-import { QueryBuilder } from './query-builder';
+import { QueryBuilder, type RelationshipSelector } from './query-builder';
+import { runSeed, type SeedRunnable } from './seed'
 
 export class Model {
   protected static tableName: string;
@@ -7,11 +8,20 @@ export class Model {
   protected fillable: string[] = [];
   protected guarded: string[] = ['id', 'created_at', 'updated_at'];
 
-  static query<T extends Model>(this: new () => T): QueryBuilder<T> {
-    const qb = new QueryBuilder<T>((this as any).tableName);
-    const banks = (this as any).banks as string[] | undefined;
+  static query<T = any>(this: any): QueryBuilder<T> {
+    const qb = new QueryBuilder<T>(this.tableName);
+    const banks = this.banks as string[] | undefined;
     if (banks && banks.length) qb.bank(banks);
     return qb;
+  }
+
+  static withRelations<T = any>(this: any, selector?: RelationshipSelector<T>): QueryBuilder<T> {
+    const qb = (this as any).query().relationship(selector as any)
+    return qb
+  }
+
+  static async seed<T = any>(this: any, dataOrSeed: Partial<T>[] | SeedRunnable<T>, opts: { truncate?: boolean } = {}): Promise<number> {
+    return runSeed<T>(this.tableName, dataOrSeed, opts)
   }
 
   bank(bankOrBanks: string | string[]): this {
