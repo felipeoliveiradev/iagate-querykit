@@ -1,7 +1,53 @@
 import { QueryBuilder } from './query-builder'
 
+/**
+ * Função seletora para definir quais relações carregar.
+ * Permite especificar quais campos de cada relação incluir.
+ * 
+ * @example
+ * ```typescript
+ * // Dados iniciais
+ * const selector: Selector = (rel) => {
+ *   rel('posts', ['id', 'title', 'content']);
+ *   rel('profile', ['bio', 'avatar']);
+ * };
+ * 
+ * // Como usar
+ * // Passado para attachRelations
+ * 
+ * // Output: Seletor configurado para carregar posts e profile
+ * ```
+ */
 type Selector = (rel: (name: string, select?: string[]) => void) => void
 
+/**
+ * Anexa relações a registros de uma tabela baseado em definições de relacionamento.
+ * Suporta hasMany, belongsTo e manyToMany com carregamento lazy.
+ * 
+ * @param table - Nome da tabela principal
+ * @param rows - Array de registros para anexar relações
+ * @param selector - Função opcional para selecionar relações específicas
+ * @returns Promise que resolve com registros com relações anexadas
+ * 
+ * @example
+ * ```typescript
+ * // Dados iniciais
+ * const users = [
+ *   { id: 1, name: 'John' },
+ *   { id: 2, name: 'Jane' }
+ * ];
+ * 
+ * // Como usar
+ * const usersWithRelations = await attachRelations('users', users, (rel) => {
+ *   rel('posts', ['id', 'title']);
+ *   rel('profile');
+ * });
+ * 
+ * // Output: Usuários com posts e profile carregados
+ * // usersWithRelations[0].posts = [{ id: 1, title: 'Post 1' }]
+ * // usersWithRelations[0].profile = { bio: 'Developer' }
+ * ```
+ */
 export async function attachRelations(table: string, rows: any[], selector?: Selector): Promise<any[]> {
 	if (!rows || rows.length === 0) return rows
 	let registry: any = {}
@@ -23,6 +69,8 @@ export async function attachRelations(table: string, rows: any[], selector?: Sel
 
 	for (const def of defs) {
 		if (wanted !== 'ALL' && !(def.name in wanted)) continue
+		
+		// Relação hasMany: um para muitos
 		if (def.kind === 'hasMany') {
 			const ids = rows.map(r => r[def.localKey || 'id'])
 			const children = await new QueryBuilder<any>(def.table).whereIn(def.foreignKey, ids).all()
@@ -33,6 +81,8 @@ export async function attachRelations(table: string, rows: any[], selector?: Sel
 				parent[def.name].push(c)
 			}
 		}
+		
+		// Relação belongsTo: muitos para um
 		if (def.kind === 'belongsTo') {
 			const fks = rows.map(r => r[def.foreignKey]).filter((v:any) => v !== undefined && v !== null)
 			if (fks.length === 0) continue
@@ -40,6 +90,8 @@ export async function attachRelations(table: string, rows: any[], selector?: Sel
 			const parentByKey = new Map<any, any>(parents.map((p:any) => [p[def.ownerKey || 'id'], p]))
 			for (const r of rows) r[def.name] = parentByKey.get(r[def.foreignKey]) || null
 		}
+		
+		// Relação manyToMany: muitos para muitos através de tabela pivot
 		if (def.kind === 'manyToMany') {
 			const ids = rows.map(r => r.id)
 			const join = def.through.table

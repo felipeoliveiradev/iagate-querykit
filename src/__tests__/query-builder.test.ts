@@ -47,7 +47,7 @@ describe('QueryBuilder', () => {
     const qb = new QueryBuilder('users').whereContains('name','john').whereStartsWithCI('email','test');
     const { sql } = qb.toSql();
     expect(sql).toMatch(/name LIKE \?/);
-    expect(sql).toMatch(/email LIKE \? COLLATE NOCASE/);
+    expect(sql).toMatch(/LOWER\(email\) LIKE LOWER\(\?\)/);
   });
 
   it('union/unionAll composes queries', () => {

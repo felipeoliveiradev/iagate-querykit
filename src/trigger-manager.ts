@@ -1,42 +1,199 @@
 import { QueryKitConfig } from './config';
 import { eventManager } from './event-manager';
 
+/**
+ * Tipos de eventos que podem disparar triggers SQL.
+ */
 type TriggerEvent = 'INSERT' | 'UPDATE' | 'DELETE';
+
+/**
+ * Momentos em que um trigger SQL pode ser executado.
+ */
 type TriggerTiming = 'BEFORE' | 'AFTER' | 'INSTEAD OF';
 
-// Semantic triggers (application-level)
+/**
+ * Ações semânticas que podem disparar triggers de aplicação.
+ * Inclui operações de leitura além das operações CRUD tradicionais.
+ */
 export type SemanticTriggerAction = 'INSERT' | 'UPDATE' | 'DELETE' | 'READ';
+
+/**
+ * Momentos semânticos para execução de triggers de aplicação.
+ */
 export type SemanticTriggerTiming = 'BEFORE' | 'AFTER';
+
+/**
+ * Array com todas as ações semânticas possíveis.
+ */
 const ALL_ACTIONS: SemanticTriggerAction[] = ['INSERT','UPDATE','DELETE','READ'];
-export type NormalizedFilter = { type: string; column?: string; operator?: string; value?: any; logical?: 'AND' | 'OR'; not?: boolean };
+
+/**
+ * Filtro normalizado para condições de trigger.
+ * Permite definir condições complexas com operadores lógicos.
+ * 
+ * @example
+ * ```typescript
+ * // Dados iniciais
+ * const filter: NormalizedFilter = {
+ *   type: 'column',
+ *   column: 'age',
+ *   operator: '>',
+ *   value: 18,
+ *   logical: 'AND',
+ *   not: false
+ * };
+ * 
+ * // Como usar
+ * // Filtro aplicado em condições de trigger
+ * 
+ * // Output: Filtro configurado para idade > 18
+ * ```
+ */
+export type NormalizedFilter = { 
+  type: string; 
+  column?: string; 
+  operator?: string; 
+  value?: any; 
+  logical?: 'AND' | 'OR'; 
+  not?: boolean 
+};
+
+/**
+ * Contexto passado para execução de triggers semânticos.
+ * Contém informações sobre a operação, dados e resultados.
+ * 
+ * @example
+ * ```typescript
+ * // Dados iniciais
+ * const context: TriggerContext = {
+ *   table: 'users',
+ *   action: 'INSERT',
+ *   timing: 'AFTER',
+ *   data: { name: 'John', email: 'john@example.com' },
+ *   result: { changes: 1, lastInsertRowid: 123 }
+ * };
+ * 
+ * // Como usar
+ * // Contexto passado para função de trigger
+ * 
+ * // Output: Contexto completo da operação de inserção
+ * ```
+ */
 export type TriggerContext = {
+  /** Nome da tabela afetada */
   table: string;
+  /** Ação que disparou o trigger */
   action: SemanticTriggerAction;
+  /** Momento de execução do trigger */
   timing: SemanticTriggerTiming;
+  /** Dados da operação (para INSERT/UPDATE) */
   data?: any;
+  /** Condições WHERE da operação */
   where?: { sql: string; bindings: any[]; filters?: NormalizedFilter[] };
+  /** Linhas afetadas pela operação */
   rows?: any[];
+  /** Resultado da operação (mudanças, IDs) */
   result?: { changes?: number; lastInsertRowid?: number | bigint };
 };
+
+/**
+ * Corpo de um trigger semântico.
+ * Pode ser uma string SQL, função ou ambos.
+ */
 export type SemanticTriggerBody = string | ((ctx: TriggerContext) => any | Promise<any>);
+
+/**
+ * Corpo de trigger com execução paralela.
+ * Permite executar múltiplas ações simultaneamente.
+ */
 export type ParallelBody = { parallel: (SemanticTriggerBody)[] };
+
+/**
+ * União de todos os tipos possíveis de corpo de trigger.
+ * Suporta execução sequencial, paralela e mista.
+ */
 export type SemanticTriggerBodyUnion = SemanticTriggerBody | SemanticTriggerBody[] | ParallelBody;
+
+/**
+ * Opções para criação de triggers semânticos.
+ * Define quando, onde e como o trigger será executado.
+ * 
+ * @example
+ * ```typescript
+ * // Dados iniciais
+ * const options: CreateSemanticTriggerOptions = {
+ *   when: 'AFTER',
+ *   action: 'INSERT',
+ *   table: 'users',
+ *   body: 'INSERT INTO audit_log (table_name, action) VALUES (?, ?)',
+ *   state: 'bank'
+ * };
+ * 
+ * // Como usar
+ * triggerManager.create('user_audit', options);
+ * 
+ * // Output: Trigger 'user_audit' criado para auditar inserções na tabela users
+ * ```
+ */
 export type CreateSemanticTriggerOptions = {
+  /** Momento de execução do trigger */
   when: SemanticTriggerTiming;
+  /** Ações que disparam o trigger (aceita '*' para todas) */
   action: SemanticTriggerAction | '*' | Array<SemanticTriggerAction | '*'>;
+  /** Ações que NÃO disparam o trigger */
   except?: Array<SemanticTriggerAction | '*'>;
+  /** Tabelas onde o trigger será aplicado */
   table: string | string[];
+  /** Corpo do trigger (SQL, função ou ambos) */
   body: SemanticTriggerBodyUnion;
+  /** Estado onde o trigger será executado ('bank' ou 'state') */
   state?: 'bank' | 'state';
 };
 
+/**
+ * Gerenciador de triggers para o QueryKit.
+ * Suporta triggers SQL nativos e triggers semânticos de aplicação.
+ * Permite execução síncrona e assíncrona com suporte a múltiplos dialetos.
+ * 
+ * @example
+ * ```typescript
+ * // Dados iniciais
+ * const triggerManager = new TriggerManager();
+ * 
+ * // Como usar
+ * triggerManager.create('user_audit', {
+ *   when: 'AFTER',
+ *   action: 'INSERT',
+ *   table: 'users',
+ *   body: (ctx) => console.log('Usuário inserido:', ctx.data)
+ * });
+ * 
+ * // Output: Trigger semântico criado para auditar inserções de usuários
+ * ```
+ */
 export class TriggerManager {
   private static semantic: Map<string, { opts: CreateSemanticTriggerOptions; offs: (() => void)[]; sqlNames: string[] } > = new Map();
 
+  /**
+   * Gera nome único para evento baseado no timing, ação e tabela.
+   * 
+   * @param when - Momento de execução
+   * @param action - Ação que dispara o trigger
+   * @param table - Tabela afetada
+   * @returns Nome único do evento
+   */
   private static eventNameFor(when: SemanticTriggerTiming, action: SemanticTriggerAction, table: string): string {
     return `querykit:trigger:${when}:${action}:${table}`;
   }
 
+  /**
+   * Executa o corpo de um trigger semântico.
+   * Suporta strings SQL, funções, arrays e execução paralela.
+   * 
+   * @param body - Corpo do trigger a ser executado
+   * @param ctx - Contexto da operação
+   * @returns Promise que resolve quando a execução terminar
+   */
   private static async runBody(body: SemanticTriggerBodyUnion, ctx: TriggerContext) {
     if (Array.isArray(body)) {
       for (const b of body) { await TriggerManager.runBody(b, ctx); }
@@ -62,6 +219,15 @@ export class TriggerManager {
     }
   }
 
+  /**
+   * Anexa listener para um evento específico de trigger.
+   * 
+   * @param when - Momento de execução
+   * @param action - Ação que dispara o trigger
+   * @param table - Tabela afetada
+   * @param body - Corpo do trigger
+   * @returns Função para cancelar o listener
+   */
   private static attachListenerFor(when: SemanticTriggerTiming, action: SemanticTriggerAction, table: string, body: SemanticTriggerBodyUnion): () => void {
     const handler = async (ctx: TriggerContext) => {
       await TriggerManager.runBody(body, ctx);
@@ -69,6 +235,13 @@ export class TriggerManager {
     return eventManager.on(TriggerManager.eventNameFor(when, action, table), handler);
   }
 
+  /**
+   * Serializa corpo do trigger para SQL quando possível.
+   * Funções não podem ser representadas em SQL, retornando null.
+   * 
+   * @param body - Corpo do trigger para serializar
+   * @returns SQL serializado ou null se não for possível
+   */
   private static serializeBodyToSql(body: SemanticTriggerBodyUnion): string | null {
     const flatten = (b: SemanticTriggerBodyUnion): (string | null)[] => {
       if (Array.isArray(b)) return b.flatMap(x => flatten(x));
@@ -87,6 +260,13 @@ export class TriggerManager {
     return joined.length ? joined + ';' : '';
   }
 
+  /**
+   * Extrai todas as strings SQL de um corpo de trigger.
+   * Útil para separar SQL de funções JavaScript.
+   * 
+   * @param body - Corpo do trigger para extrair SQL
+   * @returns Array com todas as strings SQL encontradas
+   */
   private static extractSqlStrings(body: SemanticTriggerBodyUnion): string[] {
     const out: string[] = [];
     const walk = (b: SemanticTriggerBodyUnion) => {
@@ -100,6 +280,13 @@ export class TriggerManager {
     return out;
   }
 
+  /**
+   * Extrai partes não-SQL de um corpo de trigger.
+   * Retorna apenas funções JavaScript, excluindo strings SQL.
+   * 
+   * @param body - Corpo do trigger para extrair partes não-SQL
+   * @returns Corpo do trigger sem strings SQL ou null se não houver funções
+   */
   private static extractNonSql(body: SemanticTriggerBodyUnion): SemanticTriggerBodyUnion | null {
     const toNonSql = (b: SemanticTriggerBodyUnion): SemanticTriggerBodyUnion | null => {
       if (Array.isArray(b)) {
@@ -129,6 +316,34 @@ export class TriggerManager {
     return toNonSql(body);
   }
 
+  /**
+   * Cria um trigger semântico com as opções especificadas.
+   * Remove trigger existente com o mesmo nome antes de criar.
+   * Suporta execução em banco de dados (SQL) e/ou aplicação (JavaScript).
+   * 
+   * @param name - Nome único do trigger
+   * @param opts - Opções de configuração do trigger
+   * 
+   * @example
+   * ```typescript
+   * // Dados iniciais
+   * const triggerManager = new TriggerManager();
+   * 
+   * // Como usar
+   * triggerManager.create('user_validation', {
+   *   when: 'BEFORE',
+   *   action: 'INSERT',
+   *   table: 'users',
+   *   body: (ctx) => {
+   *     if (!ctx.data.email.includes('@')) {
+   *       throw new Error('Email inválido');
+   *     }
+   *   }
+   * });
+   * 
+   * // Output: Trigger 'user_validation' criado para validar emails antes da inserção
+   * ```
+   */
   public create(name: string, opts: CreateSemanticTriggerOptions): void {
     this.drop(name);
     const offs: (() => void)[] = [];
@@ -170,6 +385,23 @@ export class TriggerManager {
     TriggerManager.semantic.set(name, { opts, offs, sqlNames: createdSql });
   }
 
+  /**
+   * Remove um trigger semântico pelo nome.
+   * Cancela listeners e remove triggers SQL associados.
+   * 
+   * @param name - Nome do trigger a ser removido
+   * 
+   * @example
+   * ```typescript
+   * // Dados iniciais
+   * triggerManager.create('temp_trigger', {  ...  });
+   * 
+   * // Como usar
+   * triggerManager.drop('temp_trigger');
+   * 
+   * // Output: Trigger 'temp_trigger' removido e recursos liberados
+   * ```
+   */
   public drop(name: string): void {
     const entry = TriggerManager.semantic.get(name);
     if (entry) {
@@ -179,6 +411,24 @@ export class TriggerManager {
     }
   }
 
+  /**
+   * Remove um trigger semântico de forma assíncrona.
+   * Versão assíncrona do método drop().
+   * 
+   * @param name - Nome do trigger a ser removido
+   * @returns Promise que resolve quando o trigger for removido
+   * 
+   * @example
+   * ```typescript
+   * // Dados iniciais
+   * await triggerManager.create('async_trigger', {  ... });
+   * 
+   * // Como usar
+   * await triggerManager.dropAsync('async_trigger');
+   * 
+   * // Output: Promise resolve quando trigger 'async_trigger' for removido
+   * ```
+   */
   public async dropAsync(name: string): Promise<void> {
     const entry = TriggerManager.semantic.get(name);
     if (entry) {
@@ -188,12 +438,45 @@ export class TriggerManager {
     }
   }
 
+  /**
+   * Remove todos os triggers semânticos ativos.
+   * Limpa todos os listeners e triggers SQL criados.
+   * 
+   * @example
+   * ```typescript
+   * // Dados iniciais
+   * triggerManager.create('trigger1', {  ...  });
+   * triggerManager.create('trigger2', {  ... *});
+   * 
+   * // Como usar
+   * triggerManager.dropAll();
+   * 
+   * // Output: Todos os triggers removidos e recursos liberados
+   * ```
+   */
   public dropAll(): void {
     for (const [name] of TriggerManager.semantic) {
       try { this.drop(name); } catch {}
     }
   }
 
+  /**
+   * Lista nomes de todos os triggers semânticos ativos.
+   * 
+   * @returns Array com nomes dos triggers ativos
+   * 
+   * @example
+   * ```typescript
+   * // Dados iniciais
+   * triggerManager.create('user_audit', { ...  });
+   * triggerManager.create('product_log', { ...  });
+   * 
+   * // Como usar
+   * const triggers = triggerManager.list();
+   * 
+   * // Output: ['user_audit', 'product_log']
+   * ```
+   */
   public list(): string[] {
     return Array.from(TriggerManager.semantic.keys());
   }
