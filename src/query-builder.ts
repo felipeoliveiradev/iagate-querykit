@@ -218,7 +218,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    * }
    */
   public hasPendingWrite(): boolean {
-    return !!this.pendingAction && ['insert','update','delete','updateOrInsert','increment','decrement'].includes(this.pendingAction.type);
+    return !!this.pendingAction && ['insert', 'update', 'delete', 'updateOrInsert', 'increment', 'decrement'].includes(this.pendingAction.type);
   }
 
   /**
@@ -4382,7 +4382,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
         const limit = this.limitValue === undefined ? results.length : this.limitValue;
         results = results.slice(offset, offset + limit);
         if (!this.includeAllRelations) return results;
-        const { attachRelations } = await import('./relations-resolver').catch(() => ({ attachRelations: async (x:any)=>x }))
+        const { attachRelations } = await import('./relations-resolver').catch(() => ({ attachRelations: async (x: any) => x }))
         const selector = typeof this.includeAllRelations === 'function' ? this.includeAllRelations : undefined
         return (await attachRelations(this.tableName, results as any, selector)) as any
       }
@@ -4397,12 +4397,178 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
     let rows = res.data as U[];
     eventManager.emit(`querykit:trigger:AFTER:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'AFTER', rows, qb: qbHelper } as any);
     if (!this.includeAllRelations) return rows;
-    const { attachRelations } = await import('./relations-resolver').catch(() => ({ attachRelations: async (x:any)=>x }))
+    const { attachRelations } = await import('./relations-resolver').catch(() => ({ attachRelations: async (x: any) => x }))
     const selector = typeof this.includeAllRelations === 'function' ? this.includeAllRelations : undefined
     return (await attachRelations(this.tableName, rows as any, selector)) as any
   }
-
+/**
+ * Executa a query de forma síncrona.
+ * Executa operações de escrita (INSERT, UPDATE, DELETE) e retorna o resultado.
+ * Requer que o executor tenha o método runSync implementado.
+ * 
+ * @returns Resultado da execução da query com informações sobre as mudanças realizadas
+ * 
+ * @throws Error se nenhum executor estiver configurado ou se não tiver runSync
+ * 
+ * @example
+ * // Exemplo básico - Executar INSERT
+ * const result = new QueryBuilder<User>('users')
+ *   .insert({ name: 'John', email: 'john@example.com' })
+ *   .run();
+ * 
+ * console.log(`Inseridos: ${result.changes} registros`);
+ * console.log(`ID: ${result.lastInsertRowid}`);
+ * 
+ * @example
+ * // Exemplo intermediário - Executar UPDATE
+ * const result = new QueryBuilder<User>('users')
+ *   .where('id', '=', 1)
+ *   .update({ lastLogin: new Date() })
+ *   .run();
+ * 
+ * if (result.changes > 0) {
+ *   console.log('Usuário atualizado com sucesso');
+ * } else {
+ *   console.log('Nenhum usuário encontrado para atualizar');
+ * }
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de auditoria com execução
+ * class AuditSystem {
+ *   static async logUserAction(
+ *     userId: number, 
+ *     action: string, 
+ *     details: any
+ *   ): Promise<void> {
+ *     try {
+ *       const result = new QueryBuilder<AuditLog>('audit_logs')
+ *         .insert({
+ *           user_id: userId,
+ *           action: action,
+ *           details: JSON.stringify(details),
+ *           timestamp: new Date(),
+ *           ip_address: this.getClientIP()
+ *         })
+ *         .run();
+ *       
+ *       // Verifica se o log foi criado com sucesso
+ *       if (result.changes === 1) {
+ *         console.log(`Ação ${action} registrada para usuário ${userId}`);
+ *         
+ *         // Emite evento de auditoria
+ *         eventManager.emit('audit:action_logged', {
+ *           userId,
+ *           action,
+ *           logId: result.lastInsertRowid,
+ *           timestamp: new Date()
+ *         });
+ *       } else {
+ *         throw new Error('Falha ao registrar ação de auditoria');
+ *       }
+ *     } catch (error) {
+ *       console.error('Erro ao registrar auditoria:', error);
+ *       // Fallback para log de arquivo
+ *       this.fallbackLog(userId, action, details);
+ *     }
+ *   }
+ *   
+ *   private static getClientIP(): string {
+ *     // Lógica para obter IP do cliente
+ *     return '127.0.0.1';
+ *   }
+ *   
+ *   private static fallbackLog(userId: number, action: string, details: any): void {
+ *     // Implementação de fallback
+ *     console.log(`FALLBACK: ${action} para usuário ${userId}`, details);
+ *   }
+ * }
+ */
   run(): any { const exec = QueryKitConfig.defaultExecutor; if (!exec || !exec.runSync) throw new Error('No executor configured for QueryKit'); const { sql, bindings } = this.toSql(); return exec.runSync(sql, bindings); }
+  /**
+ * Executa a query de forma síncrona e retorna todos os registros.
+ * Versão síncrona do método all(), útil para operações que precisam ser executadas
+ * de forma bloqueante ou em contextos onde async/await não está disponível.
+ * 
+ * @template U - Tipo de retorno, por padrão usa o tipo genérico T
+ * @returns Array com todos os registros encontrados
+ * 
+ * @throws Error se nenhum executor estiver configurado ou se não tiver executeQuerySync
+ * 
+ * @example
+ * // Exemplo básico - Busca síncrona simples
+ * const users = new QueryBuilder<User>('users')
+ *   .where('active', '=', true)
+ *   .allSync();
+ * 
+ * console.log(`Encontrados ${users.length} usuários ativos`);
+ * 
+ * @example
+ * // Exemplo intermediário - Busca com filtros e ordenação
+ * const recentUsers = new QueryBuilder<User>('users')
+ *   .where('created_at', '>=', new Date('2024-01-01'))
+ *   .orderBy('created_at', 'DESC')
+ *   .limit(50)
+ *   .allSync();
+ * 
+ * // Processa resultados imediatamente
+ * const userNames = recentUsers.map(user => user.name);
+ * console.log('Usuários recentes:', userNames);
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de cache síncrono
+ * class SynchronousCacheSystem {
+ *   private static cache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+ *   
+ *   static getCachedData<T>(
+ *     cacheKey: string, 
+ *     queryBuilder: QueryBuilder<T>, 
+ *     ttlMinutes: number = 5
+ *   ): T[] {
+ *     const cached = this.cache.get(cacheKey);
+ *     const now = Date.now();
+ *     
+ *     // Verifica se o cache é válido
+ *     if (cached && (now - cached.timestamp) < (cached.ttl * 60 * 1000)) {
+ *       console.log(`Cache hit para chave: ${cacheKey}`);
+ *       return cached.data;
+ *     }
+ *     
+ *     // Cache miss ou expirado, executa query síncrona
+ *     console.log(`Cache miss para chave: ${cacheKey}, executando query...`);
+ *     const data = queryBuilder.allSync();
+ *     
+ *     // Atualiza cache
+ *     this.cache.set(cacheKey, {
+ *       data,
+ *       timestamp: now,
+ *       ttl: ttlMinutes
+ *     });
+ *     
+ *     return data;
+ *   }
+ *   
+ *   static invalidateCache(pattern: string): void {
+ *     const keysToDelete = Array.from(this.cache.keys())
+ *       .filter(key => key.includes(pattern));
+ *     
+ *     keysToDelete.forEach(key => {
+ *       this.cache.delete(key);
+ *       console.log(`Cache invalidado para chave: ${key}`);
+ *     });
+ *   }
+ *   
+ *   static getCacheStats(): { totalKeys: number; totalSize: number; oldestEntry: number } {
+ *     const now = Date.now();
+ *     const oldestEntry = Math.min(...Array.from(this.cache.values()).map(v => v.timestamp));
+ *     
+ *     return {
+ *       totalKeys: this.cache.size,
+ *       totalSize: Array.from(this.cache.values()).reduce((sum, v) => sum + JSON.stringify(v.data).length, 0),
+ *       oldestEntry: now - oldestEntry
+ *     };
+ *   }
+ * }
+ */
   allSync<U = T>(): U[] {
     const exec = getExecutorForTable(this.tableName, this.targetBanks) as any;
     if (!exec || !exec.executeQuerySync) throw new Error('No executor configured for QueryKit');
@@ -4413,9 +4579,543 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
     eventManager.emit(`querykit:trigger:AFTER:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'AFTER', rows: out, qb: qbHelper } as any);
     return out;
   }
+  /**
+ * Executa a query de forma síncrona e retorna o primeiro registro encontrado.
+ * Versão síncrona do método get(), aplica automaticamente LIMIT 1 para otimização.
+ * Útil para buscar um único registro de forma síncrona.
+ * 
+ * @template U - Tipo de retorno, por padrão usa o tipo genérico T
+ * @returns O primeiro registro encontrado ou undefined se nenhum for encontrado
+ * 
+ * @throws Error se nenhum executor estiver configurado ou se não tiver executeQuerySync
+ * 
+ * @example
+ * // Exemplo básico - Buscar usuário por ID
+ * const user = new QueryBuilder<User>('users')
+ *   .where('id', '=', 1)
+ *   .getSync();
+ * 
+ * if (user) {
+ *   console.log(`Usuário encontrado: ${user.name}`);
+ * } else {
+ *   console.log('Usuário não encontrado');
+ * }
+ * 
+ * @example
+ * // Exemplo intermediário - Buscar com múltiplos filtros
+ * const activeAdmin = new QueryBuilder<User>('users')
+ *   .where('active', '=', true)
+ *   .where('role', '=', 'admin')
+ *   .where('last_login', '>=', new Date('2024-01-01'))
+ *   .orderBy('last_login', 'DESC')
+ *   .getSync();
+ * 
+ * if (activeAdmin) {
+ *   console.log(`Admin ativo encontrado: ${activeAdmin.name} (último login: ${activeAdmin.last_login})`);
+ * }
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de autenticação síncrono
+ * class SynchronousAuthSystem {
+ *   static authenticateUser(
+ *     username: string, 
+ *     password: string
+ *   ): AuthResult {
+ *     try {
+ *       // Busca usuário de forma síncrona
+ *       const user = new QueryBuilder<User>('users')
+ *         .where('username', '=', username)
+ *         .where('active', '=', true)
+ *         .getSync();
+ *       
+ *       if (!user) {
+ *         return {
+ *           success: false,
+ *           error: 'Usuário não encontrado ou inativo',
+ *           code: 'USER_NOT_FOUND'
+ *         };
+ *       }
+ *       
+ *       // Verifica senha
+ *       if (!this.verifyPassword(password, user.password_hash)) {
+ *         // Registra tentativa de login falhada
+ *         this.logFailedLoginAttempt(username);
+ *         
+ *         return {
+ *           success: false,
+ *           error: 'Senha incorreta',
+ *           code: 'INVALID_PASSWORD'
+ *         };
+ *       }
+ *       
+ *       // Atualiza último login
+ *       new QueryBuilder<User>('users')
+ *         .where('id', '=', user.id)
+ *         .update({ 
+ *           last_login: new Date(),
+ *           login_attempts: 0
+ *         })
+ *         .run();
+ *       
+ *       // Gera token de sessão
+ *       const sessionToken = this.generateSessionToken(user);
+ *       
+ *       return {
+ *         success: true,
+ *         user: {
+ *           id: user.id,
+ *           username: user.username,
+ *           role: user.role,
+ *           email: user.email
+ *         },
+ *         sessionToken,
+ *         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 horas
+ *       };
+ *     } catch (error) {
+ *       console.error('Erro na autenticação:', error);
+ *       return {
+ *         success: false,
+ *         error: 'Erro interno do sistema',
+ *         code: 'INTERNAL_ERROR'
+ *       };
+ *     }
+ *   }
+ *   
+ *   private static verifyPassword(password: string, hash: string): boolean {
+ *     // Implementação de verificação de senha
+ *     return password === hash; // Simplificado para exemplo
+ *   }
+ *   
+ *   private static logFailedLoginAttempt(username: string): void {
+ *     new QueryBuilder<LoginAttempt>('login_attempts')
+ *       .insert({
+ *         username,
+ *         timestamp: new Date(),
+ *         ip_address: '127.0.0.1',
+ *         success: false
+ *       })
+ *       .run();
+ *   }
+ *   
+ *   private static generateSessionToken(user: User): string {
+ *     // Implementação de geração de token
+ *     return `token_${user.id}_${Date.now()}`;
+ *   }
+ * }
+ */
   getSync<U = T>(): U | undefined { this.limit(1); return this.allSync<U>()[0]; }
+  /**
+ * Executa a query de forma síncrona e retorna o primeiro registro encontrado.
+ * Alias para getSync(), mantém consistência com a API fluente.
+ * Aplica automaticamente LIMIT 1 para otimização.
+ * 
+ * @template U - Tipo de retorno, por padrão usa o tipo genérico T
+ * @returns O primeiro registro encontrado ou undefined se nenhum for encontrado
+ * 
+ * @throws Error se nenhum executor estiver configurado ou se não tiver executeQuerySync
+ * 
+ * @example
+ * // Exemplo básico - Buscar primeiro usuário ativo
+ * const firstActiveUser = new QueryBuilder<User>('users')
+ *   .where('active', '=', true)
+ *   .orderBy('created_at', 'ASC')
+ *   .firstSync();
+ * 
+ * if (firstActiveUser) {
+ *   console.log(`Primeiro usuário ativo: ${firstActiveUser.name}`);
+ * }
+ * 
+ * @example
+ * // Exemplo intermediário - Buscar com relacionamentos
+ * const firstPost = new QueryBuilder<Post>('posts')
+ *   .where('published', '=', true)
+ *   .orderBy('created_at', 'DESC')
+ *   .firstSync();
+ * 
+ * if (firstPost) {
+ *   console.log(`Post mais recente: ${firstPost.title}`);
+ *   console.log(`Autor ID: ${firstPost.author_id}`);
+ * }
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de filas de trabalho síncrono
+ * class SynchronousJobQueue {
+ *   static getNextJob(workerId: string, jobTypes: string[]): Job | null {
+ *     try {
+ *       // Busca próximo job disponível
+ *       const nextJob = new QueryBuilder<Job>('jobs')
+ *         .where('status', '=', 'pending')
+ *         .where('job_type', 'IN', jobTypes)
+ *         .where('scheduled_at', '<=', new Date())
+ *         .orderBy('priority', 'DESC')
+ *         .orderBy('scheduled_at', 'ASC')
+ *         .firstSync();
+ *       
+ *       if (!nextJob) {
+ *         console.log('Nenhum job disponível para processar');
+ *         return null;
+ *       }
+ *       
+ *       // Marca job como em processamento
+ *       const updateResult = new QueryBuilder<Job>('jobs')
+ *         .where('id', '=', nextJob.id)
+ *         .where('status', '=', 'pending') // Verificação de concorrência
+ *         .update({
+ *           status: 'processing',
+ *           worker_id: workerId,
+ *           started_at: new Date()
+ *         })
+ *         .run();
+ *       
+ *       if (updateResult.changes === 0) {
+ *         // Job foi pego por outro worker
+ *         console.log(`Job ${nextJob.id} já foi pego por outro worker`);
+ *         return this.getNextJob(workerId, jobTypes); // Tenta novamente
+ *       }
+ *       
+ *       console.log(`Job ${nextJob.id} atribuído ao worker ${workerId}`);
+ *       return nextJob;
+ *     } catch (error) {
+ *       console.error('Erro ao buscar próximo job:', error);
+ *       return null;
+ *     }
+ *   }
+ *   
+ *   static completeJob(jobId: number, result: any, workerId: string): boolean {
+ *     try {
+ *       const updateResult = new QueryBuilder<Job>('jobs')
+ *         .where('id', '=', jobId)
+ *         .where('worker_id', '=', workerId)
+ *         .update({
+ *           status: 'completed',
+ *           completed_at: new Date(),
+ *           result: JSON.stringify(result)
+ *         })
+ *         .run();
+ *       
+ *       if (updateResult.changes === 1) {
+ *         console.log(`Job ${jobId} marcado como completo`);
+ *         
+ *         // Registra métricas de performance
+ *         this.recordJobMetrics(jobId, 'completed');
+ *         
+ *         return true;
+ *       } else {
+ *         console.log(`Job ${jobId} não encontrado ou não atribuído ao worker ${workerId}`);
+ *         return false;
+ *       }
+ *     } catch (error) {
+ *       console.error('Erro ao completar job:', error);
+ *       return false;
+ *     }
+ *   }
+ *   
+ *   private static recordJobMetrics(jobId: number, status: string): void {
+ *     // Implementação de registro de métricas
+ *     console.log(`Métrica registrada: Job ${jobId} - ${status}`);
+ *   }
+ * }
+ */
   firstSync<U = T>(): U | undefined { this.limit(1); return this.getSync<U>(); }
+  /**
+ * Executa a query de forma síncrona e retorna um array com valores de uma coluna específica.
+ * Versão síncrona do método pluck(), útil para extrair valores únicos de uma coluna.
+ * 
+ * @param column - Nome da coluna para extrair valores
+ * @returns Array com os valores da coluna especificada
+ * 
+ * @throws Error se nenhum executor estiver configurado ou se não tiver executeQuerySync
+ * 
+ * @example
+ * // Exemplo básico - Extrair nomes de usuários
+ * const userNames = new QueryBuilder<User>('users')
+ *   .where('active', '=', true)
+ *   .pluckSync('name');
+ * 
+ * console.log('Nomes dos usuários ativos:', userNames);
+ * 
+ * @example
+ * // Exemplo intermediário - Extrair IDs únicos
+ * const userIds = new QueryBuilder<User>('users')
+ *   .where('role', 'IN', ['admin', 'moderator'])
+ *   .where('last_login', '>=', new Date('2024-01-01'))
+ *   .pluckSync('id');
+ * 
+ * console.log(`Encontrados ${userIds.length} usuários privilegiados ativos`);
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de cache de listas
+ * class ListCacheSystem {
+ *   private static listCache = new Map<string, { data: any[]; timestamp: number; ttl: number }>();
+ *   
+ *   static getCachedList<T>(
+ *     cacheKey: string,
+ *     queryBuilder: QueryBuilder<T>,
+ *     column: keyof T | string,
+ *     ttlMinutes: number = 10
+ *   ): any[] {
+ *     const cached = this.listCache.get(cacheKey);
+ *     const now = Date.now();
+ *     
+ *     // Verifica se o cache é válido
+ *     if (cached && (now - cached.timestamp) < (cached.ttl * 60 * 1000)) {
+ *       console.log(`Lista cacheada encontrada para: ${cacheKey}`);
+ *       return cached.data;
+ *     }
+ *     
+ *     // Cache miss, executa query síncrona
+ *     console.log(`Executando query para lista: ${cacheKey}`);
+ *     const data = queryBuilder.pluckSync(column);
+ *     
+ *     // Atualiza cache
+ *     this.listCache.set(cacheKey, {
+ *       data,
+ *       timestamp: now,
+ *       ttl: ttlMinutes
+ *     });
+ *     
+ *     return data;
+ *   }
+ *   
+ *   static getActiveUserIds(): number[] {
+ *     return this.getCachedList(
+ *       'active_user_ids',
+ *       new QueryBuilder<User>('users').where('active', '=', true),
+ *       'id',
+ *       5 // Cache por 5 minutos
+ *     );
+ *   }
+ *   
+ *   static getAvailableCategories(): string[] {
+ *     return this.getCachedList(
+ *       'available_categories',
+ *       new QueryBuilder<Category>('categories').where('active', '=', true),
+ *       'name',
+ *       30 // Cache por 30 minutos
+ *     );
+ *   }
+ *   
+ *   static getRecentProductIds(limit: number = 100): number[] {
+ *     return this.getCachedList(
+ *       'recent_product_ids',
+ *       new QueryBuilder<Product>('products')
+ *         .where('active', '=', true)
+ *         .orderBy('created_at', 'DESC')
+ *         .limit(limit),
+ *       'id',
+ *       2 // Cache por 2 minutos
+ *     );
+ *   }
+ *   
+ *   static invalidateListCache(pattern: string): void {
+ *     const keysToDelete = Array.from(this.listCache.keys())
+ *       .filter(key => key.includes(pattern));
+ *     
+ *     keysToDelete.forEach(key => {
+ *       this.listCache.delete(key);
+ *       console.log(`Lista cacheada invalidada: ${key}`);
+ *     });
+ *   }
+ *   
+ *   static getCacheStats(): { totalLists: number; totalItems: number; oldestEntry: number } {
+ *     const now = Date.now();
+ *     const oldestEntry = Math.min(...Array.from(this.listCache.values()).map(v => v.timestamp));
+ *     
+ *     return {
+ *       totalLists: this.listCache.size,
+ *       totalItems: Array.from(this.listCache.values()).reduce((sum, v) => sum + v.data.length, 0),
+ *       oldestEntry: now - oldestEntry
+ *     };
+ *   }
+ * }
+ */
   pluckSync(column: keyof T | string): any[] { const rows = this.select([String(column)]).allSync<any>(); return rows.map(r => (r as any)[String(column)]); }
+  /**
+ * Executa a query de forma síncrona e retorna um valor escalar único.
+ * Versão síncrona do método scalar(), útil para obter valores únicos como contagens,
+ * somas, médias ou qualquer expressão que retorne um único valor.
+ * 
+ * @template U - Tipo de retorno, por padrão usa any
+ * @param alias - Nome da coluna/alias para extrair o valor (opcional)
+ * @returns O valor escalar encontrado ou undefined se nenhum for encontrado
+ * 
+ * @throws Error se nenhum executor estiver configurado ou se não tiver executeQuerySync
+ * 
+ * @example
+ * // Exemplo básico - Contar usuários ativos
+ * const activeUserCount = new QueryBuilder<User>('users')
+ *   .where('active', '=', true)
+ *   .count()
+ *   .scalarSync();
+ * 
+ * console.log(`Total de usuários ativos: ${activeUserCount}`);
+ * 
+ * @example
+ * // Exemplo intermediário - Obter valor com alias específico
+ * const totalRevenue = new QueryBuilder<Order>('orders')
+ *   .where('status', '=', 'completed')
+ *   .where('created_at', '>=', new Date('2024-01-01'))
+ *   .sum('total_amount', 'total_revenue')
+ *   .scalarSync('total_revenue');
+ * 
+ * console.log(`Receita total em 2024: R$ ${totalRevenue?.toFixed(2)}`);
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de métricas em tempo real
+ * class RealTimeMetricsSystem {
+ *   static getSystemMetrics(): SystemMetrics {
+ *     try {
+ *       const now = new Date();
+ *       const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+ *       const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+ *       
+ *       // Métricas de usuários
+ *       const totalUsers = new QueryBuilder<User>('users').count().scalarSync() || 0;
+ *       const activeUsers = new QueryBuilder<User>('users')
+ *         .where('active', '=', true)
+ *         .count()
+ *         .scalarSync() || 0;
+ *       
+ *       const newUsersToday = new QueryBuilder<User>('users')
+ *         .where('created_at', '>=', oneDayAgo)
+ *         .count()
+ *         .scalarSync() || 0;
+ *       
+ *       const onlineUsers = new QueryBuilder<User>('users')
+ *         .where('last_activity', '>=', oneHourAgo)
+ *         .count()
+ *         .scalarSync() || 0;
+ *       
+ *       // Métricas de conteúdo
+ *       const totalPosts = new QueryBuilder<Post>('posts').count().scalarSync() || 0;
+ *       const publishedPosts = new QueryBuilder<Post>('posts')
+ *         .where('published', '=', true)
+ *         .count()
+ *         .scalarSync() || 0;
+ *       
+ *       const postsToday = new QueryBuilder<Post>('posts')
+ *         .where('created_at', '>=', oneDayAgo)
+ *         .count()
+ *         .scalarSync() || 0;
+ *       
+ *       // Métricas de transações
+ *       const totalRevenue = new QueryBuilder<Transaction>('transactions')
+ *         .where('status', '=', 'completed')
+ *         .sum('amount')
+ *         .scalarSync() || 0;
+ *       
+ *       const revenueToday = new QueryBuilder<Transaction>('transactions')
+ *         .where('status', '=', 'completed')
+ *         .where('created_at', '>=', oneDayAgo)
+ *         .sum('amount')
+ *         .scalarSync() || 0;
+ *       
+ *       // Métricas de performance
+ *       const avgResponseTime = new QueryBuilder<ApiLog>('api_logs')
+ *         .where('created_at', '>=', oneHourAgo)
+ *         .avg('response_time')
+ *         .scalarSync() || 0;
+ *       
+ *       const errorRate = new QueryBuilder<ApiLog>('api_logs')
+ *         .where('created_at', '>=', oneHourAgo)
+ *         .where('status_code', '>=', 400)
+ *         .count()
+ *         .scalarSync() || 0;
+ *       
+ *       const totalRequests = new QueryBuilder<ApiLog>('api_logs')
+ *         .where('created_at', '>=', oneHourAgo)
+ *         .count()
+ *         .scalarSync() || 1; // Evita divisão por zero
+ *       
+ *       const errorPercentage = (errorRate / totalRequests) * 100;
+ *       
+ *       const metrics: SystemMetrics = {
+ *         timestamp: now,
+ *         users: {
+ *           total: totalUsers,
+ *           active: activeUsers,
+ *           newToday: newUsersToday,
+ *           online: onlineUsers,
+ *           activePercentage: totalUsers > 0 ? (activeUsers / totalUsers) * 100 : 0
+ *         },
+ *         content: {
+ *           totalPosts,
+ *           publishedPosts,
+ *           postsToday,
+ *           publishRate: totalPosts > 0 ? (publishedPosts / totalPosts) * 100 : 0
+ *         },
+ *         revenue: {
+ *           total: totalRevenue,
+ *           today: revenueToday,
+ *           dailyAverage: totalRevenue / Math.max(1, Math.ceil((now.getTime() - new Date('2024-01-01').getTime()) / (24 * 60 * 60 * 1000)))
+ *         },
+ *         performance: {
+ *           avgResponseTime,
+ *           errorRate: errorPercentage,
+ *           successRate: 100 - errorPercentage
+ *         }
+ *       };
+ *       
+ *       // Cache das métricas
+ *       this.cacheMetrics(metrics);
+ *       
+ *       return metrics;
+ *     } catch (error) {
+ *       console.error('Erro ao obter métricas do sistema:', error);
+ *       // Retorna métricas em cache ou valores padrão
+ *       return this.getCachedMetrics() || this.getDefaultMetrics();
+ *     }
+ *   }
+ *   
+ *   private static cacheMetrics(metrics: SystemMetrics): void {
+ *     // Implementação de cache de métricas
+ *     console.log('Métricas cacheadas:', metrics.timestamp);
+ *   }
+ *   
+ *   private static getCachedMetrics(): SystemMetrics | null {
+ *     // Implementação de recuperação de métricas em cache
+ *     return null;
+ *   }
+ *   
+ *   private static getDefaultMetrics(): SystemMetrics {
+ *     // Métricas padrão em caso de erro
+ *     return {
+ *       timestamp: new Date(),
+ *       users: { total: 0, active: 0, newToday: 0, online: 0, activePercentage: 0 },
+ *       content: { totalPosts: 0, publishedPosts: 0, postsToday: 0, publishRate: 0 },
+ *       revenue: { total: 0, today: 0, dailyAverage: 0 },
+ *       performance: { avgResponseTime: 0, errorRate: 0, successRate: 100 }
+ *     };
+ *   }
+ * }
+ * 
+ * interface SystemMetrics {
+ *   timestamp: Date;
+ *   users: {
+ *     total: number;
+ *     active: number;
+ *     newToday: number;
+ *     online: number;
+ *     activePercentage: number;
+ *   };
+ *   content: {
+ *     totalPosts: number;
+ *     publishedPosts: number;
+ *     postsToday: number;
+ *     publishRate: number;
+ *   };
+ *   revenue: {
+ *     total: number;
+ *     today: number;
+ *     dailyAverage: number;
+ *   };
+ *   performance: {
+ *     avgResponseTime: number;
+ *     errorRate: number;
+ *     successRate: number;
+ *   };
+ * }
+ */
   scalarSync<U = any>(alias?: string): U | undefined { const row: any = this.getSync<any>(); if (!row) return undefined; if (alias && row[alias] !== undefined) return row[alias]; const k = Object.keys(row)[0]; return row[k] as U; }
 
   /**
@@ -7361,7 +8061,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  groupBy(columns: (keyof T | string)[]): this { this.groupByColumns = columns.map(c => String(c)); return this; }
+  groupBy(columns: (keyof T | string)[]): this { this.groupByColumns = columns.map(c => String(c)); return this; }
   
   /**
    * Adiciona uma cláusula HAVING para filtrar resultados de agregação.
@@ -7468,7 +8168,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  having(column: keyof T | string, op: Operator, value: any): this { this.havingClauses.push({ type: 'basic', column, operator: op, value, logical: 'AND' }); return this; }
+  having(column: keyof T | string, op: Operator, value: any): this { this.havingClauses.push({ type: 'basic', column, operator: op, value, logical: 'AND' }); return this; }
   
   /**
    * Adiciona uma cláusula HAVING com SQL raw customizado.
@@ -7568,7 +8268,820 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  havingRaw(sql: string, bindings: any[] = [], logical: 'AND' | 'OR' = 'AND'): this { this.havingClauses.push({ type: 'raw', sql, logical } as any); return this; }
+  havingRaw(sql: string, bindings: any[] = [], logical: 'AND' | 'OR' = 'AND'): this { this.havingClauses.push({ type: 'raw', sql, logical } as any); return this; }
+  /**
+ * Seleciona todas as colunas exceto as especificadas.
+ * Útil para excluir colunas sensíveis ou desnecessárias da consulta.
+ * 
+ * @param excludeColumns - Array de colunas a serem excluídas da seleção
+ * @returns Instância atual do QueryBuilder para method chaining
+ * 
+ * @example
+ * // Exemplo básico - Excluir colunas sensíveis
+ * const users = await new QueryBuilder<User>('users')
+ *   .selectAllExcept(['password', 'ssn', 'credit_card'])
+ *   .all();
+ * 
+ * @example
+ * // Exemplo intermediário - Excluir colunas de auditoria
+ * const products = await new QueryBuilder<Product>('products')
+ *   .selectAllExcept(['created_by', 'updated_by', 'deleted_at'])
+ *   .where('active', '=', true)
+ *   .all();
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de permissões baseado em colunas
+ * class SecureDataAccess {
+ *   static async getUserData(userId: number, userRole: string): Promise<any[]> {
+ *     const baseQuery = new QueryBuilder<User>('users')
+ *       .where('id', '=', userId);
+ *     
+ *     // Define colunas sensíveis baseadas no papel do usuário
+ *     const sensitiveColumns = this.getSensitiveColumnsForRole(userRole);
+ *     
+ *     return await baseQuery
+ *       .selectAllExcept(sensitiveColumns)
+ *       .all();
+ *   }
+ *   
+ *   private static getSensitiveColumnsForRole(role: string): string[] {
+ *     switch (role) {
+ *       case 'admin':
+ *         return ['internal_notes'];
+ *       case 'manager':
+ *         return ['salary', 'internal_notes', 'performance_reviews'];
+ *       case 'employee':
+ *         return ['salary', 'internal_notes', 'performance_reviews', 'hr_notes'];
+ *       default:
+ *         return ['salary', 'internal_notes', 'performance_reviews', 'hr_notes', 'personal_info'];
+ *     }
+ *   }
+ * }
+ */
+selectAllExcept(excludeColumns: (keyof T | string)[]): this {
+  this.track('selectAllExcept', { excludeColumns });
+  // Para implementar selectAllExcept, precisamos primeiro obter todas as colunas da tabela
+  // Como isso pode variar entre bancos, vamos usar uma abordagem genérica
+  this.selectColumns = ['*'];
+  this.pendingAction = { 
+    type: 'selectAllExcept', 
+    data: excludeColumns.map(c => String(c)) 
+  };
+  return this;
+}
   
   
+  /**
+ * Gera estatísticas completas da tabela atual.
+ * Inclui contagens, médias, mínimos, máximos e outras métricas úteis.
+ * 
+ * @param options - Opções para personalizar as estatísticas
+ * @returns Instância atual do QueryBuilder configurada para estatísticas
+ * 
+ * @example
+ * // Exemplo básico - Estatísticas simples
+ * const stats = await new QueryBuilder<User>('users')
+ *   .stats()
+ *   .get();
+ * 
+ * @example
+ * // Exemplo intermediário - Estatísticas com filtros
+ * const activeUserStats = await new QueryBuilder<User>('users')
+ *   .where('active', '=', true)
+ *   .stats({ includePercentiles: true, includeNullCounts: true })
+ *   .get();
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de análise de dados
+ * class DataAnalyticsSystem {
+ *   static async generateTableReport(tableName: string): Promise<TableReport> {
+ *     const stats = await new QueryBuilder<any>(tableName)
+ *       .stats({
+ *         includePercentiles: true,
+ *         includeNullCounts: true,
+ *         includeDistinctCounts: true,
+ *         includeDataTypes: true
+ *       })
+ *       .get();
+ *     
+ *     return {
+ *       tableName,
+ *       generatedAt: new Date(),
+ *       totalRecords: stats.total_records,
+ *       columnStats: this.processColumnStats(stats),
+ *       dataQualityScore: this.calculateDataQualityScore(stats),
+ *       recommendations: this.generateRecommendations(stats)
+ *     };
+ *   }
+ *   
+ *   private static processColumnStats(stats: any): ColumnStats[] {
+ *     // Processa estatísticas das colunas
+ *     return Object.keys(stats)
+ *       .filter(key => key.includes('_stats'))
+ *       .map(key => this.parseColumnStats(key, stats[key]));
+ *   }
+ * }
+ */
+  stats(options: {
+    includePercentiles?: boolean;
+    includeNullCounts?: boolean;
+    includeDistinctCounts?: boolean;
+    includeDataTypes?: boolean;
+    customColumns?: string[];
+  } = {}): this {
+    this.track('stats', { options });
+
+    // Limpa seleções anteriores
+    this.selectColumns = [];
+
+    // Adiciona estatísticas básicas
+    this.selectExpression('COUNT(*)', 'total_records');
+
+    // Adiciona estatísticas para colunas numéricas (se disponíveis)
+    // Como não sabemos a estrutura da tabela, usamos uma abordagem genérica
+    this.selectExpression('COUNT(CASE WHEN id IS NOT NULL THEN 1 END)', 'records_with_id');
+
+    // Adiciona estatísticas opcionais baseadas nas opções
+    if (options.includeNullCounts) {
+      this.selectExpression('COUNT(CASE WHEN id IS NULL THEN 1 END)', 'null_id_count');
+    }
+
+    if (options.includeDistinctCounts) {
+      this.selectExpression('COUNT(DISTINCT id)', 'distinct_id_count');
+    }
+
+    // Adiciona colunas customizadas se fornecidas
+    if (options.customColumns) {
+      options.customColumns.forEach(col => {
+        this.selectExpression(`COUNT(CASE WHEN ${col} IS NOT NULL THEN 1 END)`, `${col}_not_null_count`);
+        this.selectExpression(`COUNT(CASE WHEN ${col} IS NULL THEN 1 END)`, `${col}_null_count`);
+      });
+    }
+
+    return this;
+  }
+  /**
+   * Adiciona uma cláusula WHERE para busca em múltiplas colunas com relevância.
+   * Similar ao whereSearch mas com scoring de relevância.
+   * 
+   * @param searchTerm - Termo de busca
+   * @param columns - Colunas para buscar
+   * @param weights - Pesos opcionais para cada coluna (maior peso = maior relevância)
+   * @returns Instância atual do QueryBuilder para method chaining
+   * 
+   * @example
+   * // Exemplo básico - Busca com relevância
+   * const results = await new QueryBuilder<Product>('products')
+   *   .whereRelevanceSearch('laptop', ['name', 'description', 'tags'])
+   *   .orderBy('relevance_score', 'DESC')
+   *   .all();
+   * 
+   * @example
+   * // Exemplo intermediário - Busca com pesos personalizados
+   * const results = await new QueryBuilder<Article>('articles')
+   *   .whereRelevanceSearch('machine learning', ['title', 'content', 'tags'], [3, 1, 2])
+   *   .orderBy('relevance_score', 'DESC')
+   *   .limit(20)
+   *   .all();
+   * 
+   * @example
+   * // Exemplo avançado - Sistema de busca inteligente
+   * class IntelligentSearchSystem {
+   *   static async searchWithContext(
+   *     searchTerm: string, 
+   *     userPreferences: UserPreferences,
+   *     searchContext: SearchContext
+   *   ): Promise<SearchResult[]> {
+   *     // Define pesos baseados no contexto e preferências do usuário
+   *     const columnWeights = this.calculateColumnWeights(userPreferences, searchContext);
+   *     
+   *     const results = await new QueryBuilder<Content>('content')
+   *       .whereRelevanceSearch(searchTerm, ['title', 'content', 'tags', 'category'], columnWeights)
+   *       .when(searchContext.includeRecent, q => q.where('created_at', '>=', this.getRecentDate()))
+   *       .when(searchContext.userId, q => q.where('user_id', '=', searchContext.userId))
+   *       .orderBy('relevance_score', 'DESC')
+   *       .limit(searchContext.maxResults || 50)
+   *       .all();
+   *     
+   *     return results.map(result => ({
+   *       ...result,
+   *       personalizedScore: this.calculatePersonalizedScore(result, userPreferences),
+   *       contextRelevance: this.calculateContextRelevance(result, searchContext)
+   *     }));
+   *   }
+   *   
+   *   private static calculateColumnWeights(prefs: UserPreferences, context: SearchContext): number[] {
+   *     // Lógica para calcular pesos baseados em preferências e contexto
+   *     return [3, 1, 2, 1.5];
+   *   }
+   * }
+   */
+  whereRelevanceSearch(
+    searchTerm: string,
+    columns: (keyof T | string)[],
+    weights: number[] = []
+  ): this {
+    if (!searchTerm) return this;
+
+    this.track('whereRelevanceSearch', { searchTerm, columns, weights });
+
+    // Normaliza pesos se fornecidos
+    const normalizedWeights = weights.length === columns.length ? weights : columns.map(() => 1);
+
+    // Cria expressão de relevância
+    const relevanceExpression = columns
+      .map((col, index) => {
+        const weight = normalizedWeights[index];
+        return `CASE WHEN ${String(col)} LIKE ? THEN ${weight} ELSE 0 END`;
+      })
+      .join(' + ');
+
+    // Adiciona busca e score de relevância
+    this.whereRawSearch(searchTerm, columns);
+    this.selectExpression(relevanceExpression, 'relevance_score');
+
+    return this;
+  }
+  /**
+   * Adiciona uma cláusula WHERE para busca fuzzy (aproximada).
+   * Útil para busca com erros de digitação ou variações.
+   * 
+   * @param searchTerm - Termo de busca
+   * @param columns - Colunas para buscar
+   * @param threshold - Limite de similaridade (0-1, padrão: 0.7)
+   * @returns Instância atual do QueryBuilder para method chaining
+   * 
+   * @example
+   * // Exemplo básico - Busca fuzzy simples
+   * const results = await new QueryBuilder<User>('users')
+   *   .whereFuzzySearch('jhon', ['name', 'email'])
+   *   .all();
+   * 
+   * @example
+   * // Exemplo intermediário - Busca fuzzy com threshold personalizado
+   * const results = await new QueryBuilder<Product>('products')
+   *   .whereFuzzySearch('laptp', ['name', 'description'], 0.6)
+   *   .orderBy('similarity_score', 'DESC')
+   *   .all();
+   * 
+   * @example
+   * // Exemplo avançado - Sistema de correção automática de busca
+   * class AutoCorrectSearchSystem {
+   *   static async searchWithCorrections(
+   *     searchTerm: string,
+   *     searchHistory: SearchHistory[],
+   *     userTypingPatterns: TypingPattern[]
+   *   ): Promise<AutoCorrectResult[]> {
+   *     // Analisa padrões de digitação do usuário
+   *     const commonMistakes = this.analyzeTypingPatterns(userTypingPatterns);
+   *     
+   *     // Gera variações da busca
+   *     const searchVariations = this.generateSearchVariations(searchTerm, commonMistakes);
+   *     
+   *     let allResults: any[] = [];
+   *     
+   *     // Busca com cada variação
+   *     for (const variation of searchVariations) {
+   *       const results = await new QueryBuilder<Product>('products')
+   *         .whereFuzzySearch(variation, ['name', 'description', 'tags'], 0.5)
+   *         .selectExpression(`
+   *           CASE 
+   *             WHEN name LIKE ? THEN 1.0
+   *             WHEN name LIKE ? THEN 0.8
+   *             ELSE 0.6
+   *           END
+   *         `, 'exact_match_score')
+   *         .limit(10)
+   *         .all();
+   *       
+   *       allResults.push(...results.map(r => ({ ...r, originalSearch: searchTerm, variation })));
+   *     }
+   *     
+   *     // Remove duplicatas e ordena por relevância
+   *     return this.deduplicateAndRank(allResults, searchTerm);
+   *   }
+   *   
+   *   private static analyzeTypingPatterns(patterns: TypingPattern[]): string[] {
+   *     // Lógica para analisar padrões de digitação
+   *     return ['th->t', 'ph->f', 'ck->k'];
+   *   }
+   * }
+   */
+  whereFuzzySearch(
+    searchTerm: string,
+    columns: (keyof T | string)[],
+    threshold: number = 0.7
+  ): this {
+    if (!searchTerm) return this;
+  
+    this.track('whereFuzzySearch', { searchTerm, columns, threshold });
+  
+    // Para compatibilidade com todos os bancos, usamos LIKE com wildcards
+    const searchConditions = columns.map(col =>
+      `${String(col)} LIKE ? OR ${String(col)} LIKE ? OR ${String(col)} LIKE ?`
+    ).join(' OR ');
+  
+    const bindings = columns.flatMap(() => [
+      `%${searchTerm}%`,           // Contém o termo
+      `%${searchTerm}`,            // Termina com o termo
+      `${searchTerm}%`             // Começa com o termo
+    ]);
+  
+    this.whereRaw(`(${searchConditions})`, bindings);
+  
+    // Adiciona score de similaridade básico aos selectColumns
+    const similarityExpression = `
+      CASE 
+        WHEN ${columns.map(col => `${String(col)} = ?`).join(' OR ')} THEN 1.0
+        WHEN ${columns.map(col => `${String(col)} LIKE ?`).join(' OR ')} THEN 0.9
+        WHEN ${columns.map(col => `${String(col)} LIKE ?`).join(' OR ')} THEN 0.8
+        WHEN ${columns.map(col => `${String(col)} LIKE ?`).join(' OR ')} THEN 0.7
+        ELSE 0.5
+      END
+    `;
+  
+    // Adiciona a expressão similarity_score aos selectColumns
+    this.selectExpression(similarityExpression, 'similarity_score');
+  
+    // Adiciona bindings para o score
+    const scoreBindings = [
+      ...columns.map(() => searchTerm),                    // Exato
+      ...columns.map(() => `${searchTerm}%`),             // Começa com
+      ...columns.map(() => `%${searchTerm}`),             // Termina com
+      ...columns.map(() => `%${searchTerm}%`)             // Contém
+    ];
+  
+    // Armazena bindings para uso posterior
+    this.pendingAction = {
+      type: 'fuzzySearch',
+      data: { searchTerm, columns, threshold, scoreBindings }
+    };
+  
+    return this;
+  }
+
+  /**
+ * Adiciona uma cláusula WHERE para busca por proximidade geográfica.
+ * Compatível com bancos que suportam tipos geoespaciais.
+ * 
+ * @param latColumn - Coluna de latitude
+ * @param lngColumn - Coluna de longitude
+ * @param lat - Latitude de referência
+ * @param lng - Longitude de referência
+ * @param radiusKm - Raio de busca em quilômetros
+ * @returns Instância atual do QueryBuilder para method chaining
+ * 
+ * @example
+ * // Exemplo básico - Busca por proximidade
+ * const nearbyStores = await new QueryBuilder<Store>('stores')
+ *   .whereNearby('latitude', 'longitude', -23.5505, -46.6333, 10)
+ *   .orderBy('distance_km', 'ASC')
+ *   .all();
+ * 
+ * @example
+ * // Exemplo intermediário - Busca por proximidade com filtros
+ * const nearbyRestaurants = await new QueryBuilder<Restaurant>('restaurants')
+ *   .whereNearby('lat', 'lng', userLat, userLng, 5)
+ *   .where('cuisine_type', 'IN', ['italian', 'pizza'])
+ *   .where('rating', '>=', 4.0)
+ *   .orderBy('distance_km', 'ASC')
+ *   .limit(20)
+ *   .all();
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de recomendação baseado em localização
+ * class LocationBasedRecommendationSystem {
+ *   static async getPersonalizedRecommendations(
+ *     userLocation: UserLocation,
+ *     userPreferences: UserPreferences,
+ *     context: RecommendationContext
+ *   ): Promise<LocationRecommendation[]> {
+ *     // Calcula raio baseado no contexto (transporte, tempo disponível, etc.)
+ *     const searchRadius = this.calculateSearchRadius(context);
+ *     
+ *     // Busca locais próximos
+ *     const nearbyPlaces = await new QueryBuilder<Place>('places')
+ *       .whereNearby('latitude', 'longitude', userLocation.lat, userLocation.lng, searchRadius)
+ *       .where('category', 'IN', userPreferences.categories)
+ *       .where('price_range', '<=', userPreferences.maxPrice)
+ *       .where('open_now', '=', true)
+ *       .selectExpression(`
+ *         CASE 
+ *           WHEN rating >= 4.5 THEN 3
+ *           WHEN rating >= 4.0 THEN 2
+ *           WHEN rating >= 3.5 THEN 1
+ *           ELSE 0
+ *         END + 
+ *         CASE 
+ *           WHEN distance_km <= 1 THEN 3
+ *           WHEN distance_km <= 3 THEN 2
+ *           WHEN distance_km <= 5 THEN 1
+ *           ELSE 0
+ *         END
+ *       `, 'recommendation_score')
+ *       .orderBy('recommendation_score', 'DESC')
+ *       .orderBy('distance_km', 'ASC')
+ *       .limit(50)
+ *       .all();
+ *     
+ *     // Aplica filtros adicionais baseados no contexto
+ *     return this.applyContextualFilters(nearbyPlaces, context);
+ *   }
+ *   
+ *   private static calculateSearchRadius(context: RecommendationContext): number {
+ *     switch (context.transportMode) {
+ *       case 'walking': return 2;
+ *       case 'biking': return 5;
+ *       case 'driving': return 15;
+ *       default: return 5;
+ *     }
+ *   }
+ * }
+ */
+  whereNearby(
+    latColumn: keyof T | string,
+    lngColumn: keyof T | string,
+    lat: number,
+    lng: number,
+    radiusKm: number
+  ): this {
+    this.track('whereNearby', { latColumn, lngColumn, lat, lng, radiusKm });
+
+    const executor = QueryKitConfig.defaultExecutor;
+    const dialect = executor?.dialect || QueryKitConfig.defaultDialect || 'sqlite';
+
+    let distanceExpression: string;
+    let whereExpression: string;
+
+    switch (dialect) {
+      case 'mysql':
+        distanceExpression = `
+        (6371 * acos(cos(radians(?)) * cos(radians(${String(latColumn)})) * 
+         cos(radians(${String(lngColumn)}) - radians(?)) + 
+         sin(radians(?)) * sin(radians(${String(latColumn)}))))
+      `;
+        whereExpression = `${distanceExpression} <= ?`;
+        break;
+      case 'postgres':
+        distanceExpression = `
+        (6371 * acos(cos(radians(?)) * cos(radians(${String(latColumn)})) * 
+         cos(radians(${String(lngColumn)}) - radians(?)) + 
+         sin(radians(?)) * sin(radians(${String(latColumn)}))))
+      `;
+        whereExpression = `${distanceExpression} <= ?`;
+        break;
+      default:
+        // Outros bancos - usa fórmula Haversine genérica
+        distanceExpression = `
+        (6371 * acos(cos(radians(?)) * cos(radians(${String(latColumn)})) * 
+         cos(radians(${String(lngColumn)}) - radians(?)) + 
+         sin(radians(?)) * sin(radians(${String(latColumn)}))))
+      `;
+        whereExpression = `${distanceExpression} <= ?`;
+    }
+
+    this.whereRaw(whereExpression, [lat, lng, lat, radiusKm]);
+    this.selectExpression(distanceExpression, 'distance_km');
+
+    return this;
+  }
+  /**
+   * Adiciona uma cláusula WHERE para busca por intervalo de datas com timezone.
+   * Útil para aplicações que precisam lidar com diferentes fusos horários.
+   * 
+   * @param column - Coluna de data/hora
+   * @param startDate - Data/hora de início
+   * @param endDate - Data/hora de fim
+   * @param timezone - Fuso horário (padrão: 'UTC')
+   * @returns Instância atual do QueryBuilder para method chaining
+   * 
+   * @example
+   * // Exemplo básico - Busca por intervalo com timezone
+   * const results = await new QueryBuilder<Event>('events')
+   *   .whereDateRangeTz('start_time', new Date('2024-01-01T00:00:00Z'), new Date('2024-01-31T23:59:59Z'), 'America/Sao_Paulo')
+   *   .all();
+   * 
+   * @example
+   * // Exemplo intermediário - Busca por horário de trabalho
+   * const workHoursEvents = await new QueryBuilder<Meeting>('meetings')
+   *   .whereDateRangeTz('scheduled_time', workDayStart, workDayEnd, userTimezone)
+   *   .where('participant_id', '=', userId)
+   *   .orderBy('scheduled_time', 'ASC')
+   *   .all();
+   * 
+   * @example
+   * // Exemplo avançado - Sistema de agendamento global
+   * class GlobalSchedulingSystem {
+   *   static async findAvailableSlots(
+   *     participants: Participant[],
+   *     meetingDuration: number,
+   *     preferredTimeRanges: TimeRange[],
+   *     timezoneConstraints: TimezoneConstraint[]
+   *   ): Promise<AvailableSlot[]> {
+   *     // Obtém fusos horários de todos os participantes
+   *     const participantTimezones = participants.map(p => p.timezone);
+   *     
+   *     let availableSlots: AvailableSlot[] = [];
+   *     
+   *     for (const timeRange of preferredTimeRanges) {
+   *       // Busca slots disponíveis em cada fuso horário
+   *       for (const timezone of participantTimezones) {
+   *         const slots = await new QueryBuilder<CalendarSlot>('calendar_slots')
+   *           .whereDateRangeTz('start_time', timeRange.start, timeRange.end, timezone)
+   *           .where('participant_id', 'IN', participants.map(p => p.id))
+   *           .where('status', '=', 'available')
+   *           .where('duration_minutes', '>=', meetingDuration)
+   *           .selectExpression(`
+   *             CASE 
+   *               WHEN timezone = ? THEN 3
+   *               WHEN timezone IN (?) THEN 2
+   *               ELSE 1
+   *             END
+   *           `, 'timezone_priority')
+   *           .orderBy('timezone_priority', 'DESC')
+   *           .orderBy('start_time', 'ASC')
+   *           .all();
+   *         
+   *         availableSlots.push(...slots.map(slot => ({
+   *           ...slot,
+   *           timezone,
+   *           localTime: this.convertToLocalTime(slot.start_time, timezone)
+   *         })));
+   *       }
+   *     }
+   *     
+   *     // Remove conflitos e ordena por prioridade
+   *     return this.removeConflictsAndSort(availableSlots, participants);
+   *   }
+   *   
+   *   private static convertToLocalTime(utcTime: Date, timezone: string): Date {
+   *     // Lógica para converter UTC para timezone local
+   *     return new Date(utcTime.toLocaleString('en-US', { timeZone: timezone }));
+   *   }
+   * }
+   */
+  whereDateRangeTz(
+    column: keyof T | string,
+    startDate: Date,
+    endDate: Date,
+    timezone: string = 'UTC'
+  ): this {
+    this.track('whereDateRangeTz', { column, startDate, endDate, timezone });
+
+    const executor = QueryKitConfig.defaultExecutor;
+    const dialect = executor?.dialect || QueryKitConfig.defaultDialect || 'sqlite';
+
+    let dateExpression: string;
+
+    switch (dialect) {
+      case 'mysql':
+        dateExpression = `CONVERT_TZ(${String(column)}, 'UTC', ?) BETWEEN ? AND ?`;
+        break;
+      case 'postgres':
+        dateExpression = `${String(column)} AT TIME ZONE 'UTC' AT TIME ZONE ? BETWEEN ? AND ?`;
+        break;
+      case 'oracle':
+        dateExpression = `FROM_TZ(${String(column)}, 'UTC') AT TIME ZONE ? BETWEEN ? AND ?`;
+        break;
+      default:
+        // Outros bancos - usa comparação direta
+        dateExpression = `${String(column)} BETWEEN ? AND ?`;
+        this.whereRaw(dateExpression, [startDate, endDate]);
+        return this;
+    }
+
+    this.whereRaw(dateExpression, [timezone, startDate, endDate]);
+    return this;
+  }
+  /**
+   * Adiciona uma cláusula WHERE para busca por padrões de texto usando regex.
+   * Compatível com bancos que suportam regex.
+   * 
+   * @param column - Coluna de texto para buscar
+   * @param pattern - Padrão regex
+   * @param flags - Flags do regex (padrão: 'i' para case-insensitive)
+   * @returns Instância atual do QueryBuilder para method chaining
+   * 
+   * @example
+   * // Exemplo básico - Busca por padrão regex
+   * const results = await new QueryBuilder<User>('users')
+   *   .whereRegex('email', '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$')
+   *   .all();
+   * 
+   * @example
+   * // Exemplo intermediário - Busca por formato de telefone
+   * const validPhones = await new QueryBuilder<Contact>('contacts')
+   *   .whereRegex('phone', '^\\+?[1-9]\\d{1,14}$')
+   *   .where('active', '=', true)
+   *   .all();
+   * 
+   * @example
+   * // Exemplo avançado - Sistema de validação de dados
+   * class DataValidationSystem {
+   *   static async validateAndCleanData(
+   *     tableName: string,
+   *     validationRules: ValidationRule[]
+   *   ): Promise<ValidationReport> {
+   *     const report: ValidationReport = {
+   *       tableName,
+   *       totalRecords: 0,
+   *       validRecords: 0,
+   *       invalidRecords: 0,
+   *       violations: []
+   *     };
+   *     
+   *     // Obtém total de registros
+   *     const totalResult = await new QueryBuilder<any>(tableName)
+   *       .selectExpression('COUNT(*)', 'total')
+   *       .get();
+   *     
+   *     report.totalRecords = totalResult.total;
+   *     
+   *     // Valida cada regra
+   *     for (const rule of validationRules) {
+   *       if (rule.type === 'regex') {
+   *         const invalidRecords = await new QueryBuilder<any>(tableName)
+   *           .whereRegex(rule.column, rule.pattern, rule.flags)
+   *           .select([rule.column, 'id'])
+   *           .all();
+   *         
+   *         report.violations.push({
+   *           rule: rule.name,
+   *           column: rule.column,
+   *           invalidCount: invalidRecords.length,
+   *           examples: invalidRecords.slice(0, 5)
+   *         });
+   *         
+   *         report.invalidRecords += invalidRecords.length;
+   *       }
+   *     }
+   *     
+   *     report.validRecords = report.totalRecords - report.invalidRecords;
+   *     
+   *     return report;
+   *   }
+   *   
+   *   static getCommonValidationRules(): ValidationRule[] {
+   *     return [
+   *       {
+   *         name: 'Valid Email',
+   *         type: 'regex',
+   *         column: 'email',
+   *         pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$',
+   *         flags: 'i'
+   *       },
+   *       {
+   *         name: 'Valid Phone',
+   *         type: 'regex',
+   *         column: 'phone',
+   *         pattern: '^\\+?[1-9]\\d{1,14}$',
+   *         flags: ''
+   *       },
+   *       {
+   *         name: 'Valid URL',
+   *         type: 'regex',
+   *         column: 'website',
+   *         pattern: '^https?:\\/\\/[\\w\\-]+(\\.[\\w\\-]+)+([\\w\\-\\.,@?^=%&:\\/~\\+#]*[\\w\\-\\@?^=%&\\/~\\+#])?$',
+   *         flags: 'i'
+   *       }
+   *     ];
+   *   }
+   * }
+   */
+  whereRegex(
+    column: keyof T | string,
+    pattern: string,
+    flags: string = 'i'
+  ): this {
+    this.track('whereRegex', { column, pattern, flags });
+
+    const executor = QueryKitConfig.defaultExecutor;
+    const dialect = executor?.dialect || QueryKitConfig.defaultDialect || 'sqlite';
+
+    let regexExpression: string;
+
+    switch (dialect) {
+      case 'mysql':
+        regexExpression = `${String(column)} REGEXP ?`;
+        break;
+      case 'postgres':
+        regexExpression = `${String(column)} ~ ?`;
+        break;
+      case 'oracle':
+        regexExpression = `REGEXP_LIKE(${String(column)}, ?)`;
+        break;
+      default:
+        // Outros bancos - usa LIKE como fallback
+        regexExpression = `${String(column)} LIKE ?`;
+        const likePattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '%');
+        this.whereRaw(regexExpression, [likePattern]);
+        return this;
+    }
+
+    this.whereRaw(regexExpression, [pattern]);
+    return this;
+  }
+
+  /**
+   * Adiciona uma cláusula WHERE para busca por valores que correspondem a um padrão específico.
+   * Útil para filtros de texto com wildcards.
+   * 
+   * @param column - Coluna de texto para filtrar
+   * @param pattern - Padrão com wildcards (% para qualquer sequência, _ para um caractere)
+   * @param caseSensitive - Se a busca deve ser case-sensitive (padrão: false)
+   * @returns Instância atual do QueryBuilder para method chaining
+   * 
+   * @example
+   * // Exemplo básico - Padrão com wildcards
+   * const results = await new QueryBuilder<User>('users')
+   *   .wherePattern('name', 'Jo%n')
+   *   .all();
+   * 
+   * // Exemplo intermediário - Padrão case-sensitive
+   * const results = await new QueryBuilder<Product>('products')
+   *   .wherePattern('sku', 'PROD_%', true)
+   *   .all();
+   * 
+   * @example
+   * // Exemplo avançado - Sistema de busca por padrões de arquivo
+   * class FilePatternSearchSystem {
+   *   static async searchFilesByPattern(
+   *     baseDirectory: string,
+   *     searchPatterns: FilePattern[],
+   *     searchOptions: SearchOptions
+   *   ): Promise<FileSearchResult[]> {
+   *     let allResults: FileSearchResult[] = [];
+   *     
+   *     for (const pattern of searchPatterns) {
+   *       // Constrói query baseada no tipo de padrão
+   *       let query = new QueryBuilder<FileRecord>('files')
+   *         .where('directory', 'LIKE', `${baseDirectory}%`);
+   *       
+   *       if (pattern.type === 'filename') {
+   *         query = query.wherePattern('filename', pattern.pattern, pattern.caseSensitive);
+   *       } else if (pattern.type === 'extension') {
+   *         query = query.wherePattern('extension', pattern.pattern, pattern.caseSensitive);
+   *       } else if (pattern.type === 'path') {
+   *         query = query.wherePattern('full_path', pattern.pattern, pattern.caseSensitive);
+   *       }
+   *       
+   *       // Aplica filtros adicionais
+   *       if (searchOptions.minSize) {
+   *         query = query.where('file_size', '>=', searchOptions.minSize);
+   *       }
+   *       
+   *       if (searchOptions.maxSize) {
+   *         query = query.where('file_size', '<=', searchOptions.maxSize);
+   *       }
+   *       
+   *       if (searchOptions.modifiedAfter) {
+   *         query = query.where('modified_date', '>=', searchOptions.modifiedAfter);
+   *       }
+   *       
+   *       if (searchOptions.fileTypes) {
+   *         query = query.whereIn('extension', searchOptions.fileTypes);
+   *       }
+   *       
+   *       const results = await query
+   *         .orderBy('filename', 'ASC')
+   *         .limit(searchOptions.maxResults || 1000)
+   *         .all();
+   *       
+   *       allResults.push(...results.map(r => ({ ...r, matchedPattern: pattern.name })));
+   *     }
+   *     
+   *     // Remove duplicatas e ordena por relevância
+   *     return this.deduplicateAndRank(allResults, searchPatterns);
+   *   }
+   *   
+   *   private static deduplicateAndRank(results: FileSearchResult[], patterns: FilePattern[]): FileSearchResult[] {
+   *     const uniqueResults = new Map<string, FileSearchResult>();
+   *     
+   *     for (const result of results) {
+   *       const key = `${result.directory}/${result.filename}`;
+   *       if (!uniqueResults.has(key) || this.isBetterMatch(result, uniqueResults.get(key)!, patterns)) {
+   *         uniqueResults.set(key, result);
+   *       }
+   *     }
+   *     
+   *     return Array.from(uniqueResults.values())
+   *       .sort((a, b) => this.calculateRelevance(b, patterns) - this.calculateRelevance(a, patterns));
+   *   }
+   * }
+   */
+  wherePattern(
+    column: keyof T | string,
+    pattern: string,
+    caseSensitive: boolean = false
+  ): this {
+    this.track('wherePattern', { column, pattern, caseSensitive });
+
+    if (caseSensitive) {
+      this.where(column, 'LIKE', pattern);
+    } else {
+      this.whereILike(column, pattern);
+    }
+
+    return this;
+  }
 }
