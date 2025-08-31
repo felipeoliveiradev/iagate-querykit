@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { QueryKitConfig, setDefaultExecutor } from '../config';
 import { QueryBuilder } from '../query-builder';
 import { table } from '../table';
 import { raw } from '../raw';
+import { simulationManager } from '../simulation-manager';
 
 class MockExec {
   queries: { sql: string; bindings: any[] }[] = [];
@@ -829,4 +830,270 @@ describe('QueryBuilder new methods', () => {
       expect(qb['whereClauses']).toBeDefined()
     })
   })
+  })
+
+  describe('whereMultiSearch', () => {
+    class ExecMock {
+      dialect = 'sqlite'; // Adiciona dialect para que whereILike funcione corretamente
+      executeQuery(sql: string, bindings: any[]) { return Promise.resolve({ data: [] }) }
+      executeQuerySync(sql: string, bindings: any[]) { return { data: [] } }
+      runSync(sql: string, bindings: any[]) { return { changes: 1, lastInsertRowid: 1 } }
+    }
+    beforeEach(() => { 
+      setDefaultExecutor(new ExecMock() as any);
+      // Ativa o simulation manager para que o tracking funcione
+      simulationManager.start({});
+    })
+  
+    afterEach(() => {
+      simulationManager.stop();
+    })
+  
+    it('tracks whereMultiSearch operation', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], type: 'LIKE', value: 'laptop' }
+      ])
+      expect(qb['trackingLogs']).toContainEqual(
+        expect.objectContaining({
+          step: 'whereMultiSearch',
+          details: { searches: [{ columns: ['name'], type: 'LIKE', value: 'laptop' }] }
+        })
+      )
+    })
+  
+    it('returns early if searches array is empty', () => {
+      const qb = new QueryBuilder('products')
+      const result = qb.whereMultiSearch([])
+      expect(result).toBe(qb)
+    })
+  
+    it('returns early if searches is null or undefined', () => {
+      const qb = new QueryBuilder('products')
+      const result1 = qb.whereMultiSearch(null as any)
+      const result2 = qb.whereMultiSearch(undefined as any)
+      expect(result1).toBe(qb)
+      expect(result2).toBe(qb)
+    })
+  
+    it('skips searches with undefined or null values', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], type: 'LIKE', value: 'laptop' },
+        { columns: ['category'], type: '=', value: undefined },
+        { columns: ['status'], type: 'IN', value: null }
+      ])
+      
+      const { sql } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(sql).not.toContain('category')
+      expect(sql).not.toContain('status')
+    })
+  
+    it('applies LIKE search correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], type: 'LIKE', value: 'laptop' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(bindings).toContain('laptop')
+    })
+  
+    it('applies LIKE_CI search correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], type: 'LIKE_CI', value: 'laptop' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('LOWER(name) LIKE LOWER(?)')
+      expect(bindings).toContain('laptop')
+    })
+  
+    it('applies CONTAINS search correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], type: 'CONTAINS', value: 'laptop' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(bindings).toContain('%laptop%')
+    })
+  
+    it('applies STARTS_WITH search correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], type: 'STARTS_WITH', value: 'lap' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(bindings).toContain('lap%')
+    })
+  
+    it('applies ENDS_WITH search correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], type: 'ENDS_WITH', value: 'top' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(bindings).toContain('%top')
+    })
+  
+    it('applies IN search with array value', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['category'], type: 'IN', value: ['electronics', 'computers'] }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('category IN (?, ?)')
+      expect(bindings).toContain('electronics')
+      expect(bindings).toContain('computers')
+    })
+  
+    it('applies IN search with single value', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['category'], type: 'IN', value: 'electronics' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('category = ?')
+      expect(bindings).toContain('electronics')
+    })
+  
+    it('applies NOT IN search correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['category'], type: 'NOT IN', value: ['electronics', 'computers'] }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('category NOT IN (?, ?)')
+      expect(bindings).toContain('electronics')
+      expect(bindings).toContain('computers')
+    })
+  
+    it('applies BETWEEN search correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['price'], type: 'BETWEEN', value: [100, 500] }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('price BETWEEN ? AND ?')
+      expect(bindings).toContain(100)
+      expect(bindings).toContain(500)
+    })
+  
+    it('applies BETWEEN search with invalid array', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['price'], type: 'BETWEEN', value: [100] }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('price = ?')
+      expect(bindings).toContain(100)
+    })
+  
+    it('applies default LIKE when type is not specified', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], value: 'laptop' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(bindings).toContain('laptop')
+    })
+  
+    it('applies comparison operators correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['price'], type: '>', value: 100 },
+        { columns: ['rating'], type: '>=', value: 4.0 },
+        { columns: ['stock'], type: '<', value: 50 }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('price > ?')
+      expect(sql).toContain('rating >= ?')
+      expect(sql).toContain('stock < ?')
+      expect(bindings).toContain(100)
+      expect(bindings).toContain(4.0)
+      expect(bindings).toContain(50)
+    })
+  
+    it('handles multiple columns with LIKE correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name', 'description'], type: 'LIKE', value: 'laptop' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('description LIKE ?')
+      expect(bindings).toContain('laptop')
+      expect(bindings).toContain('laptop')
+    })
+  
+    it('handles multiple columns with other types correctly', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['category', 'brand'], type: '=', value: 'electronics' }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('category = ?')
+      expect(sql).toContain('brand = ?')
+      expect(bindings).toContain('electronics')
+      expect(bindings).toContain('electronics')
+    })
+  
+    it('combines multiple searches with AND by default', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name'], type: 'LIKE', value: 'laptop' },
+        { columns: ['category'], type: '=', value: 'electronics' }
+      ])
+      
+      const { sql } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('category = ?')
+      // Verifica se ambas as condições estão presentes (AND implícito)
+      expect(sql).toContain('WHERE')
+    })
+  
+    it('handles complex search scenarios', () => {
+      const qb = new QueryBuilder('products').whereMultiSearch([
+        { columns: ['name', 'description'], type: 'LIKE', value: 'laptop' },
+        { columns: ['category'], type: 'IN', value: ['electronics', 'computers'] },
+        { columns: ['price'], type: 'BETWEEN', value: [100, 1000] },
+        { columns: ['rating'], type: '>=', value: 4.0 },
+        { columns: ['active'], type: '=', value: true }
+      ])
+      
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('description LIKE ?')
+      expect(sql).toContain('category IN (?, ?)')
+      expect(sql).toContain('price BETWEEN ? AND ?')
+      expect(sql).toContain('rating >= ?')
+      expect(sql).toContain('active = ?')
+      
+      expect(bindings).toContain('laptop')
+      expect(bindings).toContain('laptop')
+      expect(bindings).toContain('electronics')
+      expect(bindings).toContain('computers')
+      expect(bindings).toContain(100)
+      expect(bindings).toContain(1000)
+      expect(bindings).toContain(4.0)
+      expect(bindings).toContain(true)
+    })
+  
+    it('maintains method chaining', () => {
+      const qb = new QueryBuilder('products')
+        .select(['id', 'name'])
+        .whereMultiSearch([
+          { columns: ['name'], type: 'LIKE', value: 'laptop' }
+        ])
+        .orderBy('name', 'ASC')
+        .limit(10)
+      
+      const { sql } = qb.toSql()
+      expect(sql).toContain('SELECT')
+      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('ORDER BY')
+      expect(sql).toContain('LIMIT ?')
+    })
   })

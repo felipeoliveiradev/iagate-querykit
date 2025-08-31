@@ -3714,7 +3714,16 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
     const params: any[] = [];
     if (this.joins.length > 0) baseSelect += ' ' + this.joins.map(j => `${j.type} JOIN ${j.table} ON ${j.on}`).join(' ');
     const whereClause = this.buildWhereClause(this.whereClauses, params, 'AND');
-    if (whereClause) baseSelect += ` WHERE ${whereClause}`;
+    const orWhereClause = this.buildWhereClause(this.orWhereClauses, params, 'OR');
+    
+    if (whereClause || orWhereClause) {
+      baseSelect += ' WHERE';
+      if (whereClause) baseSelect += ` ${whereClause}`;
+      if (orWhereClause) {
+        if (whereClause) baseSelect += ' OR';
+        baseSelect += ` ${orWhereClause}`;
+      }
+    }
     if (this.groupByColumns.length > 0) baseSelect += ` GROUP BY ${this.groupByColumns.join(', ')}`;
     if (this.havingClauses.length > 0) {
       const havingClause = this.buildWhereClause(this.havingClauses as any, params, 'AND');
@@ -3743,8 +3752,14 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
       switch (clause.type) {
         case 'basic': params.push(clause.value); conditionStr = `${String(clause.column)} ${clause.operator} ?`; break;
         case 'column': conditionStr = `${String(clause.column)} ${clause.operator} ${String(clause.value)}`; break;
-        case 'raw': conditionStr = clause.sql!; break;
-        case 'in': if (!Array.isArray(clause.value) || clause.value.length === 0) { conditionStr = clause.not ? '1=1' : '1=0'; } else { params.push(...clause.value); const placeholders = clause.value.map(() => '?').join(','); conditionStr = `${String(clause.column)} ${clause.not ? 'NOT IN' : 'IN'} (${placeholders})`; } break;
+        case 'raw': 
+          // Para cláusulas raw, adiciona os bindings se existirem
+          if (clause.value && Array.isArray(clause.value)) {
+            params.push(...clause.value);
+          }
+          conditionStr = clause.sql!; 
+          break;
+        case 'in': if (!Array.isArray(clause.value) || clause.value.length === 0) { conditionStr = clause.not ? '1=1' : '1=0'; } else { params.push(...clause.value); const placeholders = clause.value.map(() => '?').join(', '); conditionStr = `${String(clause.column)} ${clause.not ? 'NOT IN' : 'IN'} (${placeholders})`; } break;
         case 'null': conditionStr = `${String(clause.column)} IS ${clause.not ? 'NOT ' : ''}NULL`; break;
         case 'between': params.push(...clause.value); conditionStr = `${String(clause.column)} ${clause.not ? 'NOT BETWEEN' : 'BETWEEN'} ? AND ?`; break;
         case 'exists': const { sql, bindings } = clause.query!.toSql(); params.push(...bindings); conditionStr = `${clause.not ? 'NOT ' : ''}EXISTS (${sql})`; break;
@@ -4129,7 +4144,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *       .where('users.active', '=', true)
    *       .where('users.notifications_enabled', '=', true);
    *     
-   *     // Aplica filtros baseados no tipo de notificação
+   *     // Aplica filtros baseado no tipo de notificação
    *     switch (notificationType) {
    *       case 'system_update':
    *         query = query.where('users.role', 'IN', ['admin', 'moderator', 'user']);
@@ -8266,7 +8281,6 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *       return 'Poor';
    *     }
    *   }
-   * }
    */
   havingRaw(sql: string, bindings: any[] = [], logical: 'AND' | 'OR' = 'AND'): this { this.havingClauses.push({ type: 'raw', sql, logical } as any); return this; }
   /**
@@ -9084,4 +9098,211 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
 
     return this;
   }
+/**
+ * Adiciona múltiplas cláusulas WHERE para busca em diferentes campos com tipos específicos.
+ * Compatível com todos os bancos de dados suportados (MySQL, PostgreSQL, Oracle, SQL Server, SQLite).
+ * Cada busca é aplicada apenas se o valor não for undefined ou null.
+ * 
+ * @param searches - Array de configurações de busca
+ * @returns Instância atual do QueryBuilder para method chaining
+ * 
+ * @example
+ * // Exemplo básico - Busca simples com LIKE
+ * const results = await new QueryBuilder<Product>('products')
+ *   .whereMultiSearch([
+ *     { columns: ['name'], type: 'LIKE', value: 'laptop' },
+ *     { columns: ['category_id'], type: '=', value: 5 }
+ *   ])
+ *   .all();
+ * 
+ * @example
+ * // Exemplo intermediário - Múltiplos tipos de busca
+ * const results = await new QueryBuilder<Article>('articles')
+ *   .whereMultiSearch([
+ *     { columns: ['title', 'content'], type: 'LIKE', value: 'machine learning' },
+ *     { columns: ['author_id'], type: '=', value: 123 },
+ *     { columns: ['status'], type: 'IN', value: ['published', 'draft'] },
+ *     { columns: ['created_at'], type: '>=', value: new Date('2024-01-01') }
+ *   ])
+ *   .all();
+ * 
+ * @example
+ * // Exemplo avançado - Sistema de busca inteligente com validação
+ * class AdvancedSearchSystem {
+ *   static async searchWithMultipleCriteria(
+ *     searchCriteria: SearchCriteria[],
+ *     userPreferences: UserPreferences
+ *   ): Promise<SearchResult[]> {
+ *     // Filtra critérios baseados em permissões do usuário
+ *     const allowedCriteria = this.filterCriteriaByPermissions(searchCriteria, userPreferences);
+ *     
+ *     // Constrói query baseada nos critérios permitidos
+ *     let query = new QueryBuilder<Content>('content')
+ *       .where('active', '=', true);
+ *     
+ *     // Aplica busca em múltiplos campos
+ *     query = query.whereMultiSearch(allowedCriteria);
+ *     
+ *     // Adiciona ordenação baseada em relevância
+ *     if (searchCriteria.some(c => c.type === 'LIKE')) {
+ *       query = query.orderBy('relevance_score', 'DESC');
+ *     }
+ *     
+ *     // Aplica filtros de paginação
+ *     const results = await query
+ *       .limit(userPreferences.maxResults || 50)
+ *       .all();
+ *     
+ *     return this.postProcessResults(results, searchCriteria);
+ *   }
+ *   
+ *   private static filterCriteriaByPermissions(
+ *     criteria: SearchCriteria[], 
+ *     prefs: UserPreferences
+ *   ): SearchCriteria[] {
+ *     return criteria.filter(c => {
+ *       // Lógica para filtrar critérios baseados em permissões
+ *       return this.isCriteriaAllowed(c, prefs);
+ *     });
+ *   }
+ * }
+ */
+whereMultiSearch(searches: Array<{
+  columns: (keyof T | string)[];
+  type?: 'LIKE' | '=' | '!=' | '>' | '>=' | '<' | '<=' | 'IN' | 'NOT IN' | 'BETWEEN' | 'LIKE_CI' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH';
+  value: any;
+  operator?: 'AND' | 'OR';
+}>): this {
+  if (!searches || searches.length === 0) return this;
+
+  this.track('whereMultiSearch', { searches });
+
+  searches.forEach((search) => {
+    // Pula busca se o valor for undefined ou null
+    if (search.value === undefined || search.value === null) {
+      return;
+    }
+
+    const columns = search.columns.map(col => String(col));
+    const type = search.type || 'LIKE';
+    const operator = search.operator || 'AND';
+
+          // Aplica a busca baseada no tipo - usando métodos existentes compatíveis com todos os bancos
+      switch (type) {
+        case 'LIKE':
+          // LIKE padrão - funciona em todos os bancos
+          this.whereLike(columns[0], search.value);
+          break;
+        
+        case 'LIKE_CI':
+          // LIKE case-insensitive - usa whereILike que é compatível com todos os bancos
+          this.whereILike(columns[0], search.value);
+          break;
+        
+        case 'CONTAINS':
+          // Contém - usa whereContains que é compatível com todos os bancos
+          this.whereContains(columns[0], search.value);
+          break;
+        
+        case 'STARTS_WITH':
+          // Começa com - usa whereStartsWith que é compatível com todos os bancos
+          this.whereStartsWith(columns[0], search.value);
+          break;
+        
+        case 'ENDS_WITH':
+          // Termina com - usa whereEndsWith que é compatível com todos os bancos
+          this.whereEndsWith(columns[0], search.value);
+          break;
+      
+              case 'IN':
+          // IN - funciona em todos os bancos
+          if (Array.isArray(search.value)) {
+            this.whereIn(columns[0], search.value);
+          } else {
+            this.where(columns[0], '=', search.value);
+          }
+          break;
+        
+        case 'NOT IN':
+          // NOT IN - funciona em todos os bancos
+          if (Array.isArray(search.value)) {
+            this.whereNotIn(columns[0], search.value);
+          } else {
+            this.where(columns[0], '!=', search.value);
+          }
+          break;
+        
+        case 'BETWEEN':
+          // BETWEEN - funciona em todos os bancos
+          if (Array.isArray(search.value) && search.value.length === 2) {
+            this.whereBetween(columns[0], [search.value[0], search.value[1]]);
+          } else if (Array.isArray(search.value) && search.value.length === 1) {
+            // Fallback para array com apenas um elemento
+            this.where(columns[0], '=', search.value[0]);
+          } else {
+            this.where(columns[0], '=', search.value);
+          }
+          break;
+        
+        default:
+          // Operadores de comparação padrão (=, !=, >, >=, <, <=) - funcionam em todos os bancos
+          this.where(columns[0], type, search.value);
+          break;
+    }
+
+          // Para múltiplas colunas, aplica OR entre elas
+      if (columns.length > 1) {
+        for (let i = 1; i < columns.length; i++) {
+          switch (type) {
+            case 'LIKE':
+              this.orWhereLike(columns[i], search.value);
+              break;
+            case 'LIKE_CI':
+              this.orWhere(columns[i], 'LIKE', search.value); // Fallback simples para OR
+              break;
+            case 'CONTAINS':
+              this.orWhere(columns[i], 'LIKE', `%${search.value}%`);
+              break;
+            case 'STARTS_WITH':
+              this.orWhere(columns[i], 'LIKE', `${search.value}%`);
+              break;
+            case 'ENDS_WITH':
+              this.orWhere(columns[i], 'LIKE', `%${search.value}`);
+              break;
+            case 'IN':
+              if (Array.isArray(search.value)) {
+                this.orWhereIn(columns[i], search.value);
+              } else {
+                this.orWhere(columns[i], '=', search.value);
+              }
+              break;
+            case 'NOT IN':
+              if (Array.isArray(search.value)) {
+                this.orWhereNotIn(columns[i], search.value);
+              } else {
+                this.orWhere(columns[i], '!=', search.value);
+              }
+              break;
+            case 'BETWEEN':
+              if (Array.isArray(search.value) && search.value.length === 2) {
+                this.orWhere(columns[i], 'BETWEEN', [search.value[0], search.value[1]]);
+              } else if (Array.isArray(search.value) && search.value.length === 1) {
+                this.orWhere(columns[i], '=', search.value[0]);
+              } else {
+                this.orWhere(columns[i], '=', search.value);
+              }
+              break;
+            default:
+              // Operadores de comparação padrão
+              if (['=', '!=', '>', '>=', '<', '<='].includes(type)) {
+                this.orWhere(columns[i], type as '=' | '!=' | '>' | '>=' | '<' | '<=', search.value);
+              }
+              break;
+          }
+        }
+      }
+    });
+
+  return this;
+}
 }
