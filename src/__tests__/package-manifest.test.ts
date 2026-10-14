@@ -31,5 +31,6 @@ describe('package manifest (T10, R6, R8, P4, P5)', () => {
     expect(pkg.peerDependencies.pg).toMatch(/^\^/);
     expect(pkg.peerDependencies.mysql2).toMatch(/^\^/);
     expect(pkg.repository.directory).toBeUndefined();
+    expect(pkg.repository.url).toBe('git+https://github.com/felipeoliveiradev/iagate-querykit.git');
   });
 });

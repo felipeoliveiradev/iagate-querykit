@@ -121,3 +121,4 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - Throwaway `querykit` / `QueryKit_*` loopback creds confirmed invented. No `recam`, no company hosts, no RFC1918 targets outside the rejection-guard test.
 - Workflow: `NPM_TOKEN` only via `secrets`, never echoed; workflow `permissions: contents: read`; no `pull_request_target`. PR #1 has no comments or artifacts with secrets.
 - Added CI job `secrets` (gitleaks) and `npm run secret-scan` / `prepublishOnly`. Report: `SECURITY.md`. **No rotation. No history rewrite.**
+- Publish job uses `scripts/publish-if-new.sh` (single-quoted `node -p`; `repository.url` pinned for provenance; creates GitHub Release `vX.Y.Z` from this changelog).
