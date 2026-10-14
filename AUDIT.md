@@ -232,3 +232,18 @@ Hard rule: every live engine was `127.0.0.1` only. Ephemeral `qk_e_*` databases 
 | R5-6 | Info | AUDIT §9 still claimed “no Docker / FTS is LIKE” after Round 4. | FIXED (this section) | n/a |
 
 Hard rule unchanged: throwaway loopback only. Not published.
+
+---
+
+## 15. Round 6 findings (leaked-secret audit)
+
+| ID | Severity | Finding | Status | Covering test |
+| --- | --- | --- | --- | --- |
+| SEC1 | Info | No live tokens, private keys, npm `_authToken`, or company DSNs in any git ref (gitleaks 0, trufflehog 1 unverified rejection fixture). | CONFIRMED clean | `src/__tests__/secret-scan.test.ts` |
+| SEC2 | Info | Published `iagate-querykit@0.1.0`–`0.1.46` tarballs: no `.env` / `.npmrc` / keys. Sourcemaps are `.d.ts.map` only. | CONFIRMED clean | `SECURITY.md` |
+| SEC3 | Info | Compose / CI / ephemeral use invented `querykit` / `QueryKit_*` on `127.0.0.1` only. Docs use `secret` / `tiger` / `Passw0rd!` / `user:pass@localhost`. | CONFIRMED throwaway | `ephemeral-db-guard.test.ts` |
+| SEC4 | Medium | No gitleaks job and no pre-publish pack scan. | FIXED (`.github/workflows/ci.yml` `secrets` job + `npm run secret-scan` / `prepublishOnly`) | `secret-scan.test.ts` |
+| SEC5 | Low | Workflow default permissions were unset (GitHub default `write`). | FIXED (`permissions: contents: read`; publish keeps `id-token: write`) | workflow review |
+| SEC6 | Info | PR #1 body/comments/artifacts: no secrets. No other PRs. | CONFIRMED clean | `SECURITY.md` |
+
+Nothing to rotate. History rewrite **not** required (would need owner approval before any force-push).

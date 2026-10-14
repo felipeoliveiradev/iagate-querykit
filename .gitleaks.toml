@@ -1,0 +1,16 @@
+# Allowlist for invented throwaway loopback credentials and documented
+# placeholders. Real tokens / keys are still flagged by default rules.
+title = "iagate-querykit"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Throwaway CI/compose passwords (querykit / QueryKit_*) and redaction-test fixtures. Not company secrets."
+regexes = [
+  '''(?i)\bquerykit\b''',
+  '''QueryKit_123''',
+  '''QueryKit123''',
+  '''password-super-secret''',
+  '''super-secret-token''',
+]

@@ -113,3 +113,11 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - `BetterSqlite3Executor` enables safe integers by default; values inside `MAX_SAFE_INTEGER` hydrate to `number`.
 - `UnsupportedFeatureError` for optional capabilities (example: `memory` regex).
 - Suite: **489 tests**. Coverage **96.14% lines / 90.04% branches / 92.69% functions**.
+
+### Round 6 — leaked-secret audit (same 1.0.0, unpublished)
+
+- Full-history gitleaks + trufflehog on every branch (`main`, this PR, empty `gh-pages`): **no live secrets**.
+- Every published npm tarball (`0.1.0`–`0.1.46`) downloaded and scanned (sourcemaps, `.env`, `.npmrc`, fixtures): **no live secrets**.
+- Throwaway `querykit` / `QueryKit_*` loopback creds confirmed invented. No `recam`, no company hosts, no RFC1918 targets outside the rejection-guard test.
+- Workflow: `NPM_TOKEN` only via `secrets`, never echoed; workflow `permissions: contents: read`; no `pull_request_target`. PR #1 has no comments or artifacts with secrets.
+- Added CI job `secrets` (gitleaks) and `npm run secret-scan` / `prepublishOnly`. Report: `SECURITY.md`. **No rotation. No history rewrite.**

@@ -327,7 +327,7 @@ Integração: SQLite `:memory:`, Postgres 16, MySQL 8, SQL Server 2022, Oracle F
 | Peers | better-sqlite3, pg, mysql2, oracledb, mssql — todos opcionais |
 | Build | `npm run build` → tsup; `prepack` rebuilda |
 | Typecheck | `tsc --noEmit` strict + NodeNext — **passou** |
-| CI | `.github/workflows/ci.yml` — typecheck/test/build em PR; publish em Release e push em `main` com `--provenance`, skip se a versão já existe, `NPM_TOKEN` |
+| CI | `.github/workflows/ci.yml` — job `secrets` (gitleaks histórico) + typecheck/test/build em PR; publish em Release e push em `main` com `--provenance`, `secret-scan` antes do publish, skip se a versão já existe, `NPM_TOKEN` só via `secrets` |
 | `main` | **existe** |
 | Publish deste agente | **não** |
 

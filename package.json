@@ -429,7 +429,9 @@
     "api:docs": "typedoc",
     "docs:all": "npm run api:docs && npm run docs:build",
     "consumer:verify": "node scripts/consumer-verify.mjs",
-    "bench": "node scripts/bench.mjs"
+    "bench": "node scripts/bench.mjs",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "prepublishOnly": "npm run secret-scan"
   },
   "author": "Felipe Oliveira <felipeoliveiradeveloper@gmail.com>",
   "license": "MIT",

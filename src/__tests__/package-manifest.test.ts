@@ -14,6 +14,8 @@ describe('package manifest (T10, R6, R8, P4, P5)', () => {
     expect(pkg.exports['.'].require.default).toBe('./dist/index.cjs');
     expect(pkg.exports['.'].require.types).toBe('./dist/index.d.cts');
     expect(pkg.files).toContain('LICENSE');
+    expect(pkg.scripts['secret-scan']).toBe('node scripts/secret-scan.mjs');
+    expect(pkg.scripts.prepublishOnly).toBe('npm run secret-scan');
   });
 
   it('exports previously missing subpaths', () => {

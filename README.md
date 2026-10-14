@@ -4,7 +4,7 @@ Typed SQL toolkit for TypeScript. Compose queries with `QueryBuilder`, manage vi
 
 First-party executors: SQLite (`better-sqlite3`), MySQL (`mysql2`), PostgreSQL (`pg`), Oracle (`oracledb`), SQL Server (`mssql`). Dual ESM/CJS package. Identifiers are quoted per dialect; values are bound.
 
-See [CHANGELOG.md](./CHANGELOG.md) for 1.0.0 breaking changes and [RELEASE.md](./RELEASE.md) for npm publish (`NPM_TOKEN` secret required).
+See [CHANGELOG.md](./CHANGELOG.md) for 1.0.0 breaking changes, [RELEASE.md](./RELEASE.md) for npm publish (`NPM_TOKEN` secret required), and [SECURITY.md](./SECURITY.md) for the leaked-secret audit.
 
 ### Install
 
