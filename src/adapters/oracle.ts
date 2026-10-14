@@ -1,18 +1,21 @@
-import type { DatabaseExecutor, QueryResult } from '../types';
+import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
+import { toOracleParams } from '../sql/placeholders.js';
 import { createRequire } from 'node:module';
 
 let oracledb: any;
 function ensureOracle() {
   if (oracledb) return;
   const mocked = (globalThis as any).__vitest_mocks__?.oracledb;
-  if (mocked) { oracledb = mocked; return; }
-  try { const req = createRequire(import.meta.url); oracledb = req('oracledb'); } catch { throw new Error('oracledb is required: npm install oracledb'); }
-}
-
-function toOracle(sql: string): { sql: string } {
-  let i = 0;
-  const out = sql.replace(/\?/g, () => `:${++i}`);
-  return { sql: out };
+  if (mocked) {
+    oracledb = mocked;
+    return;
+  }
+  try {
+    const req = createRequire(import.meta.url);
+    oracledb = req('oracledb');
+  } catch {
+    throw new Error('oracledb is required: npm install oracledb');
+  }
 }
 
 export type OracleExecutorConfig = {
@@ -21,14 +24,36 @@ export type OracleExecutorConfig = {
   connectString?: string;
   poolMin?: number;
   poolMax?: number;
+  pool?: any;
 };
 
-export class OracleExecutor implements DatabaseExecutor {
-  public dialect: 'oracle' = 'oracle';
-  private pool: any;
+function mapOracle(res: any): QueryResult {
+  const rows = res?.rows || [];
+  return {
+    data: rows,
+    affectedRows: res?.rowsAffected,
+    lastInsertId: res?.lastRowid,
+  };
+}
 
-  constructor(private config: OracleExecutorConfig = {}) {
+function asWrite(res: QueryResult): WriteResult {
+  return {
+    changes: res.affectedRows ?? 0,
+    lastInsertRowid: (res.lastInsertId as any) ?? 0,
+  };
+}
+
+export class OracleExecutor implements DatabaseExecutor {
+  public readonly dialect = 'oracle' as const;
+  private pool: any;
+  private config: OracleExecutorConfig;
+  private ownsPool: boolean;
+
+  constructor(config: OracleExecutorConfig = {}) {
     ensureOracle();
+    this.config = config;
+    this.pool = config.pool;
+    this.ownsPool = !config.pool;
   }
 
   private async getPool() {
@@ -48,14 +73,64 @@ export class OracleExecutor implements DatabaseExecutor {
     const pool = await this.getPool();
     const conn = await pool.getConnection();
     try {
-      const { sql: text } = toOracle(sql);
-      const res = await conn.execute(text, bindings, { outFormat: oracledb.OUT_FORMAT_OBJECT, autoCommit: true });
-      const rows = (res as any).rows || [];
-      const affectedRows = (res as any).rowsAffected;
-      const lastInsertId = (res as any).lastRowid;
-      return { data: rows, affectedRows, lastInsertId };
+      const text = toOracleParams(sql);
+      const res = await conn.execute(text, bindings, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+        autoCommit: true,
+      });
+      return mapOracle(res);
     } finally {
-      try { await conn.close(); } catch {}
+      try {
+        await conn.close();
+      } catch {
+        /* ignore */
+      }
     }
   }
-} 
+
+  async run(sql: string, bindings: any[] = []): Promise<WriteResult> {
+    return asWrite(await this.executeQuery(sql, bindings));
+  }
+
+  async transaction<T>(fn: (tx: DatabaseExecutor) => Promise<T>): Promise<T> {
+    const pool = await this.getPool();
+    const conn = await pool.getConnection();
+    const tx: DatabaseExecutor = {
+      dialect: 'oracle',
+      executeQuery: async (sql: string, bindings: any[] = []) => {
+        const text = toOracleParams(sql);
+        const res = await conn.execute(text, bindings, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+          autoCommit: false,
+        });
+        return mapOracle(res);
+      },
+      run: async (sql: string, bindings: any[] = []) =>
+        asWrite(await tx.executeQuery(sql, bindings)),
+    };
+    try {
+      const result = await fn(tx);
+      await conn.commit();
+      return result;
+    } catch (err) {
+      try {
+        await conn.rollback();
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    } finally {
+      try {
+        await conn.close();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.ownsPool && this.pool && typeof this.pool.close === 'function') {
+      await this.pool.close(0);
+    }
+  }
+}

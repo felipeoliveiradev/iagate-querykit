@@ -1,24 +1,32 @@
 ## QueryKit (iagate-querykit)
 
-Minimal, typed building blocks for SQL-centric data apps in TypeScript. Compose queries with `QueryBuilder`, manage views and triggers, schedule jobs, run simulations, and route to one or multiple databases. Includes a `better-sqlite3` executor.
+Typed SQL toolkit for TypeScript. Compose queries with `QueryBuilder`, manage views and triggers, schedule jobs, run simulations and migrations, and route to one or multiple databases.
+
+First-party executors: SQLite (`better-sqlite3`), MySQL (`mysql2`), PostgreSQL (`pg`), Oracle (`oracledb`), SQL Server (`mssql`). Dual ESM/CJS package. Identifiers are quoted per dialect; values are bound.
+
+See [CHANGELOG.md](./CHANGELOG.md) for 1.0.0 breaking changes and [RELEASE.md](./RELEASE.md) for npm publish (`NPM_TOKEN` secret required).
 
 ### Install
 
 ```bash
 npm install iagate-querykit
-# optional peer
+# pick the driver(s) you use
 npm install better-sqlite3
+npm install pg
+npm install mysql2
 ```
+
+Works with `require` and `import`. TypeScript consumers can use `moduleResolution: NodeNext` or `bundler`.
 
 ### Core Concepts
 
-- `QueryBuilder<T>(table)`: Build SQL with a fluent API and execute via a configured executor.
-- `ViewManager`: Create/drop views and schedule refreshes.
-- `TriggerManager`: Create/drop SQLite triggers.
-- `scheduler`: Simple interval scheduler with named tasks.
-- `simulationManager`: Dry-run mode that executes against an in-memory virtual state.
-- `MultiDatabaseManager`: Register and execute against multiple adapters.
-- `BetterSqlite3Executor`: DatabaseExecutor for `better-sqlite3`.
+- `QueryBuilder<T>(table)`: Build parameterized SQL with a fluent API.
+- `ViewManager`: Create/drop views (dialect-aware) and schedule refreshes.
+- `TriggerManager`: SQL triggers (dialect-aware DDL) plus in-process semantic triggers.
+- `scheduler`: Interval scheduler (`schedule` / `unschedule` / `list` / `clear`).
+- `simulationManager`: Dry-run mode against an in-memory virtual state.
+- `MultiDatabaseManager`: Register executors or adapters and fan out queries.
+- Executors: `BetterSqlite3Executor`, `PostgresExecutor`, `MysqlExecutor`, `OracleExecutor`, `SqlServerExecutor` — each implements `executeQuery`, `close()`, and `transaction()`.
 
 ---
 
@@ -42,10 +50,11 @@ npm install better-sqlite3
 - Time helpers: `paginate(page?, perPage?)`, `range(field, start?, end?)`, `period(field, key?)`
 - Union: `union(query)`, `unionAll(query)`
 - Compile: `toSql(): { sql, bindings }`
-- Execute async: `all<U= T>()`, `exists()`, `pluck(column)`
-- Execute sync: `run()`, `allSync<U>()`, `getSync<U>()`, `firstSync<U>()`, `pluckSync(column)`, `scalarSync<U>(alias?)`
-- Fetch one/find: `get<U>()`, `first<U>()`, `find(id)`
-- Write now: `make()`
+- Execute async: `all<U= T>()`, `exists()`, `pluck(column)`, `get<U>()`, `first<U>()`, `find(id)`
+- Execute sync (SQLite / sync executors): `run()`, `allSync<U>()`, `getSync<U>()`, `firstSync<U>()`, `pluckSync(column)`, `scalarSync<U>(alias?)`
+- Write now: `make()` (multi-row `insert` supported)
+- `where(column, value)` is equality; `where(column, op, value)` for other operators
+- Identifiers are quoted; `whereRaw` / `havingRaw` / join `ON` stay raw (caller-owned)
 
 ### ViewManager
 - `createOrReplaceView(viewName, query)`
@@ -56,15 +65,14 @@ npm install better-sqlite3
 - `viewExists(viewName): boolean`
 - `view<T>(viewName): QueryBuilder<T>`
 
-### TriggerManager (SQLite)
-- `createTrigger(name, table, timing: 'BEFORE'|'AFTER'|'INSTEAD OF', event: 'INSERT'|'UPDATE'|'DELETE', body)`
-- `dropTrigger(name)`
-- `listTriggers(): string[]`
-- `triggerExists(name): boolean`
+### TriggerManager
+- SQL: `createTrigger(name, table, timing, event, body)` — dialect-specific DDL (SQLite `IF NOT EXISTS`, Postgres function+trigger, MySQL/MSSQL/Oracle variants)
+- `dropTrigger(name)`, `listTriggers()` / `listTriggersAsync()`, `triggerExists()` / `triggerExistsAsync()`
+- Semantic: `create(name, { when, action, table, body, except?, state? })`, `drop`, `list`, `dropAll`
 
 ### scheduler
-- `schedule(name, task, intervalMs)`
-- `unschedule(name)`
+- `schedule(name, task, intervalMs)` — `unref()`s the timer
+- `unschedule(name)`, `list()`, `clear()`
 
 ### parallel
 - `parallel(...queries: QueryBuilder[]): Promise<any[]>`
@@ -77,9 +85,9 @@ npm install better-sqlite3
 - `updateStateFor(tableName, data)`
 
 ### MultiDatabaseManager
-- `getInstance(config?)`
-- `initialize(createAdapter: (config) => BaseDatabaseAdapter)`
-- `getAdapter(name)` / `getDefaultAdapter()`
+- `getInstance(config)` (throws if uninitialized), `resetInstance()`
+- `initialize(create: (config) => DatabaseExecutor | BaseDatabaseAdapter)` — README-style `BetterSqlite3Executor` factories work
+- `register(name, executor)`, `getAdapter(name)`, `getDefaultAdapter()`, `close()`
 - `executeOnMultiple(databaseNames, sql, params?) => Record<string, QueryResult>`
 
 ### Config
@@ -89,9 +97,9 @@ npm install better-sqlite3
 ### Helpers
 - `raw(sql)`
 - `table<T>(tableName)` → `QueryBuilder<T>`
-- `Model`
-  - Static: `query<T>()`
-  - Instance: `fill(attrs)`, `save()`
+- `Model`: `query()`, `withRelations()`, `seed()`, instance `fill`, `save` (writes generated id), `delete` (requires id)
+- Migrations: `migrateUp`, `migrateDown`, `migration()` DSL, `runSeed`, `setRelations`
+- `quoteIdent` / `UnsafeIdentifierError` from the package root
 
 ### Configure an executor
 
@@ -100,6 +108,13 @@ import { setDefaultExecutor } from 'iagate-querykit'
 import { BetterSqlite3Executor } from 'iagate-querykit/adapters/better-sqlite3'
 
 setDefaultExecutor(new BetterSqlite3Executor('app.sqlite'))
+// later
+// await executor.close()
+```
+
+```ts
+import { PostgresExecutor } from 'iagate-querykit/adapters/postgresql'
+setDefaultExecutor(new PostgresExecutor({ connectionString: process.env.DATABASE_URL }))
 ```
 
 ### Queries
@@ -116,7 +131,7 @@ const users = await new QueryBuilder<{ id: number; email: string; active: number
   .all()
 
 // Aggregates
-const total = await new QueryBuilder('orders').count().scalarSync<number>('count')
+const total = new QueryBuilder('orders').count().scalarSync<number>('count')
 
 // Insert / Update / Delete
 await new QueryBuilder('users').insert({ email: 'a@b.com', active: 1 }).make()
@@ -230,6 +245,7 @@ simulationManager.stop()
 
 ```ts
 import { MultiDatabaseManager } from 'iagate-querykit'
+import { BetterSqlite3Executor } from 'iagate-querykit/adapters/better-sqlite3'
 
 const multi = MultiDatabaseManager.getInstance({
   defaultDatabase: 'primary',
@@ -247,13 +263,20 @@ const results = await multi.executeOnMultiple(
 )
 ```
 
-### Makefile
+### Transactions
 
-Common tasks:
+```ts
+await executor.transaction(async (tx) => {
+  await tx.executeQuery('INSERT INTO users (email) VALUES (?)', ['a@b.com'])
+  await tx.executeQuery('INSERT INTO audit (msg) VALUES (?)', ['created'])
+})
+```
+
+### Makefile / release
 
 - build: `make build`
 - test: `make test`
-- publish: `make publish`
+- publish: GitHub Actions on `main` and GitHub Releases. The owner must add an `NPM_TOKEN` secret. See `RELEASE.md`. Do not `npm publish` from this PR.
 
 ### License
 
@@ -309,6 +332,7 @@ const results = await parallel(
 
 ```ts
 import { MultiDatabaseManager } from 'iagate-querykit'
+import { BetterSqlite3Executor } from 'iagate-querykit/adapters/better-sqlite3'
 
 const multi = MultiDatabaseManager.getInstance({
   defaultDatabase: 'primary',

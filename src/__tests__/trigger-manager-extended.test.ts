@@ -16,10 +16,10 @@ class ExecMock {
   async executeQuery(sql: string, bindings: any[] = []) { return this.executeQuerySync(sql, bindings) }
 
   runSync(sql: string, bindings: any[] = []) {
-    const createMatch = /CREATE TRIGGER IF NOT EXISTS\s+(\S+)/i.exec(sql)
-    if (createMatch) { this._triggers.add(createMatch[1]); return { changes: 1, lastInsertRowid: 1 } }
-    const dropMatch = /DROP TRIGGER IF EXISTS\s+(\S+)/i.exec(sql)
-    if (dropMatch) { this._triggers.delete(dropMatch[1]); return { changes: 1, lastInsertRowid: 0 } }
+    const createMatch = /CREATE TRIGGER IF NOT EXISTS\s+"?([A-Za-z0-9_]+)"?/i.exec(sql)
+    if (createMatch) { this._triggers.add(createMatch[1]!); return { changes: 1, lastInsertRowid: 1 } }
+    const dropMatch = /DROP TRIGGER IF EXISTS\s+"?([A-Za-z0-9_]+)"?/i.exec(sql)
+    if (dropMatch) { this._triggers.delete(dropMatch[1]!); return { changes: 1, lastInsertRowid: 0 } }
     return { changes: 0, lastInsertRowid: 0 }
   }
 }

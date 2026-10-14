@@ -1,7 +1,11 @@
-import { QueryKitConfig, getExecutorForTable } from './config';
-import { raw } from './raw';
-import { simulationManager } from './simulation-manager';
-import { eventManager } from './event-manager';
+import { QueryKitConfig, getExecutorForTable, resolveDialect } from './config.js';
+import { raw, Raw } from './raw.js';
+import { simulationManager } from './simulation-manager.js';
+import { eventManager } from './event-manager.js';
+import type { DatabaseExecutor, WriteResult } from './types.js';
+import type { SqlDialect } from './sql/dialect.js';
+import { applyPaging, returningInsertSql } from './sql/dialect.js';
+import { quoteIdent, quoteSelectItem, quoteTableRef } from './sql/identifiers.js';
 
 /**
  * Operadores SQL suportados para comparações em cláusulas WHERE.
@@ -90,7 +94,7 @@ export type RelationshipSelector<T> = (rel: (name: string, select?: string[]) =>
  *   .update({ lastLogin: new Date() })
  *   .make();
  */
-export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
+export class QueryBuilder<T = any> {
   private tableName: string;
   private whereClauses: WhereClause<T>[] = [];
   private orWhereClauses: WhereClause<T>[] = [];
@@ -133,6 +137,35 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    * const query = new QueryBuilder<Log>('system_logs');
    */
   constructor(tableName: string) { this.tableName = tableName; }
+
+  private dialect(): SqlDialect {
+    try {
+      return resolveDialect(getExecutorForTable(this.tableName, this.targetBanks));
+    } catch {
+      return resolveDialect(QueryKitConfig.defaultExecutor);
+    }
+  }
+
+  private qIdent(name: string): string {
+    return quoteIdent(name, this.dialect());
+  }
+
+  private qTable(ref: string = this.tableName): string {
+    return quoteTableRef(ref, this.dialect());
+  }
+
+  private qSelect(item: unknown): string {
+    if (item && typeof item === 'object' && 'toSQL' in (item as any)) {
+      return (item as Raw).toSQL();
+    }
+    return quoteSelectItem(String(item), this.dialect());
+  }
+
+  private formatRawBindings(value: unknown): any[] {
+    if (Array.isArray(value)) return value;
+    if (value === undefined) return [];
+    return [value];
+  }
 
   /**
    * Define o banco de dados de destino para a query.
@@ -368,13 +401,13 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
       case 'insert': this.virtualTable.push(...data); break;
       case 'update': {
         const rowsToUpdate = this.applyWhereClausesToVirtual(this.virtualTable);
-        rowsToUpdate.forEach(row => Object.assign(row, data));
+        rowsToUpdate.forEach(row => Object.assign(row as object, data));
         break;
       }
       case 'delete': {
         const rowsToDelete = this.applyWhereClausesToVirtual(this.virtualTable);
-        const idsToDelete = new Set(rowsToDelete.map(r => r.id));
-        this.virtualTable = this.virtualTable.filter(row => !idsToDelete.has(row.id));
+        const idsToDelete = new Set(rowsToDelete.map((r: any) => r.id));
+        this.virtualTable = this.virtualTable.filter((row: any) => !idsToDelete.has(row.id));
         break;
       }
     }
@@ -613,7 +646,18 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  where(column: keyof T | string, operator: Operator, value: any): this { this.track('where', { column, operator, value }); this.whereClauses.push({ type: 'basic', column, operator, value, logical: 'AND' }); return this; }
+  where(column: keyof T | string, value: any): this;
+  where(column: keyof T | string, operator: Operator, value: any): this;
+  where(column: keyof T | string, operatorOrValue: Operator | any, value?: any): this {
+    if (arguments.length < 3) {
+      this.track('where', { column, operator: '=', value: operatorOrValue });
+      this.whereClauses.push({ type: 'basic', column, operator: '=', value: operatorOrValue, logical: 'AND' });
+      return this;
+    }
+    this.track('where', { column, operator: operatorOrValue, value });
+    this.whereClauses.push({ type: 'basic', column, operator: operatorOrValue as Operator, value, logical: 'AND' });
+    return this;
+  }
   
   /**
    * Adiciona uma cláusula OR WHERE à consulta.
@@ -720,7 +764,10 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  whereIf(condition: any, column: keyof T | string, operator: Operator, value: any): this { if (condition !== null && condition !== undefined && condition !== '') this.where(column, operator, value); return this; }
+  whereIf(condition: any, column: keyof T | string, operator: Operator, value: any): this {
+    if (condition) this.where(column, operator, value);
+    return this;
+  }
   
   /**
    * Adiciona múltiplas cláusulas WHERE baseadas em um objeto de condições.
@@ -791,7 +838,13 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  whereAll(conditions: Partial<T>): this { for (const key in conditions) { const value = (conditions as any)[key]; this.whereIf(value, key, '=', value); } return this; }
+  whereAll(conditions: Partial<T>): this {
+    for (const key in conditions) {
+      const value = (conditions as any)[key];
+      if (value !== undefined) this.where(key, '=', value);
+    }
+    return this;
+  }
 
   /**
    * Prepara uma operação de INSERT na tabela.
@@ -2017,7 +2070,12 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  whereRawSearch(searchTerm: string, columns: (keyof T | string)[]): this { if (!searchTerm) return this; const searchConditions = columns.map(col => `${String(col)} LIKE ?`).join(' OR '); const bindings = columns.map(() => `%${searchTerm}%`); return this.whereRaw(`(${searchConditions})`, bindings); }
+  whereRawSearch(searchTerm: string, columns: (keyof T | string)[]): this {
+    if (!searchTerm) return this;
+    const searchConditions = columns.map((col) => `${this.qIdent(String(col))} LIKE ?`).join(' OR ');
+    const bindings = columns.map(() => `%${searchTerm}%`);
+    return this.whereRaw(`(${searchConditions})`, bindings);
+  }
   
   /**
    * Adiciona uma cláusula WHERE EXISTS para verificar se uma subconsulta retorna resultados.
@@ -2613,7 +2671,26 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  clone(): this { const newQuery = new (this.constructor as any)(this.tableName); Object.assign(newQuery, { ...this, selectColumns: [...this.selectColumns], whereClauses: [...this.whereClauses], orWhereClauses: [...this.orWhereClauses], joins: [...this.joins], orderClauses: [...this.orderClauses], groupByColumns: [...this.groupByColumns], havingClauses: [...this.havingClauses], aggregates: [...this.aggregates], }); return newQuery; }
+  clone(): this {
+    const newQuery = new (this.constructor as any)(this.tableName) as this;
+    Object.assign(newQuery, {
+      ...this,
+      selectColumns: [...this.selectColumns],
+      whereClauses: this.whereClauses.map((c) => ({ ...c })),
+      orWhereClauses: this.orWhereClauses.map((c) => ({ ...c })),
+      joins: this.joins.map((j) => ({ ...j })),
+      orderClauses: this.orderClauses.map((o) => ({ ...o })),
+      groupByColumns: [...this.groupByColumns],
+      havingClauses: this.havingClauses.map((c) => ({ ...c })),
+      aggregates: this.aggregates.map((a) => ({ ...a })),
+      unionParts: this.unionParts.map((u) => ({ ...u })),
+      targetBanks: this.targetBanks ? [...this.targetBanks] : undefined,
+      pendingAction: this.pendingAction ? { ...this.pendingAction } : undefined,
+      trackingLogs: [...this.trackingLogs],
+      virtualTable: [...this.virtualTable],
+    });
+    return newQuery;
+  }
 
   /**
    * Adiciona uma cláusula ORDER BY para ordenar os resultados.
@@ -3351,7 +3428,9 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  innerJoinOn(targetTable: string, left: string, right: string): this { return this.innerJoin(targetTable, `${left} = ${right}`); }
+  innerJoinOn(targetTable: string, left: string, right: string): this {
+    return this.innerJoin(targetTable, `${this.qIdent(left)} = ${this.qIdent(right)}`);
+  }
   
   /**
    * Adiciona um LEFT JOIN com condição de igualdade entre duas colunas.
@@ -3470,7 +3549,9 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  leftJoinOn(targetTable: string, left: string, right: string): this { return this.leftJoin(targetTable, `${left} = ${right}`); }
+  leftJoinOn(targetTable: string, left: string, right: string): this {
+    return this.leftJoin(targetTable, `${this.qIdent(left)} = ${this.qIdent(right)}`);
+  }
   
   /**
    * Adiciona um RIGHT JOIN com condição de igualdade entre duas colunas.
@@ -3585,7 +3666,9 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  rightJoinOn(targetTable: string, left: string, right: string): this { return this.rightJoin(targetTable, `${left} = ${right}`); }
+  rightJoinOn(targetTable: string, left: string, right: string): this {
+    return this.rightJoin(targetTable, `${this.qIdent(left)} = ${this.qIdent(right)}`);
+  }
 
   /**
    * Gera a string SQL e os bindings para a query construída.
@@ -3706,16 +3789,23 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    * }
    */
   public toSql(): { sql: string; bindings: any[] } {
-    if (this.aggregates.length > 0) {
-      const agg = this.aggregates[0];
-      this.selectColumns = [raw(`${agg.func}(${agg.column}) as ${agg.alias || 'aggregate'}`)];
-    }
-    let baseSelect = `SELECT ${this.isDistinct ? 'DISTINCT' : ''} ${this.selectColumns.map(c => (c && typeof c === 'object' && 'toSQL' in c) ? (c as any).toSQL() : String(c)).join(', ')} FROM ${this.tableName}${this.tableAlias ? ' ' + this.tableAlias : ''}`;
+    const dialect = this.dialect();
+    const selectItems = this.aggregates.length > 0
+      ? this.aggregates.map((agg) => {
+          const col = agg.column === '*' ? '*' : this.qIdent(agg.column);
+          return `${agg.func}(${col}) AS ${this.qIdent(agg.alias || 'aggregate')}`;
+        })
+      : this.selectColumns.map((c) => this.qSelect(c));
+    const distinct = this.isDistinct ? 'DISTINCT ' : '';
+    const from = this.qTable(this.tableName) + (this.tableAlias ? ' ' + this.qIdent(this.tableAlias) : '');
+    let baseSelect = `SELECT ${distinct}${selectItems.join(', ')} FROM ${from}`;
     const params: any[] = [];
-    if (this.joins.length > 0) baseSelect += ' ' + this.joins.map(j => `${j.type} JOIN ${j.table} ON ${j.on}`).join(' ');
+    if (this.joins.length > 0) {
+      baseSelect += ' ' + this.joins.map((j) => `${j.type} JOIN ${this.qTable(j.table)} ON ${j.on}`).join(' ');
+    }
     const whereClause = this.buildWhereClause(this.whereClauses, params, 'AND');
     const orWhereClause = this.buildWhereClause(this.orWhereClauses, params, 'OR');
-    
+
     if (whereClause || orWhereClause) {
       baseSelect += ' WHERE';
       if (whereClause) baseSelect += ` ${whereClause}`;
@@ -3724,25 +3814,31 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
         baseSelect += ` ${orWhereClause}`;
       }
     }
-    if (this.groupByColumns.length > 0) baseSelect += ` GROUP BY ${this.groupByColumns.join(', ')}`;
+    if (this.groupByColumns.length > 0) {
+      baseSelect += ` GROUP BY ${this.groupByColumns.map((c) => this.qIdent(c)).join(', ')}`;
+    }
     if (this.havingClauses.length > 0) {
       const havingClause = this.buildWhereClause(this.havingClauses as any, params, 'AND');
       if (havingClause) baseSelect += ` HAVING ${havingClause}`;
     }
     if (this.unionParts.length === 0) {
-      if (this.orderClauses.length > 0) baseSelect += ` ORDER BY ${this.orderClauses.map(o => `${o.column} ${o.direction}`).join(', ')}`;
-      if (typeof this.limitValue === 'number') { baseSelect += ` LIMIT ?`; params.push(this.limitValue); }
-      if (typeof this.offsetValue === 'number') { baseSelect += ` OFFSET ?`; params.push(this.offsetValue); }
+      if (this.orderClauses.length > 0) {
+        baseSelect += ` ORDER BY ${this.orderClauses.map((o) => `${this.qIdent(o.column)} ${o.direction}`).join(', ')}`;
+      }
+      baseSelect = applyPaging(baseSelect, dialect, this.limitValue, this.offsetValue, params);
+      return { sql: baseSelect, bindings: params };
     }
-    if (this.unionParts.length > 0) {
-      let sql = `${baseSelect}`;
-      for (const part of this.unionParts) { const { sql: subSql, bindings: subBindings } = part.query.toSql(); sql += ` ${part.type} ${subSql}`; params.push(...subBindings); }
-      if (this.orderClauses.length > 0) sql += ` ORDER BY ${this.orderClauses.map(o => `${o.column} ${o.direction}`).join(', ')}`;
-      if (typeof this.limitValue === 'number') { sql += ` LIMIT ?`; params.push(this.limitValue); }
-      if (typeof this.offsetValue === 'number') { sql += ` OFFSET ?`; params.push(this.offsetValue); }
-      return { sql, bindings: params };
+    let sql = `${baseSelect}`;
+    for (const part of this.unionParts) {
+      const { sql: subSql, bindings: subBindings } = part.query.toSql();
+      sql += ` ${part.type} ${subSql}`;
+      params.push(...subBindings);
     }
-    return { sql: baseSelect, bindings: params };
+    if (this.orderClauses.length > 0) {
+      sql += ` ORDER BY ${this.orderClauses.map((o) => `${this.qIdent(o.column)} ${o.direction}`).join(', ')}`;
+    }
+    sql = applyPaging(sql, dialect, this.limitValue, this.offsetValue, params);
+    return { sql, bindings: params };
   }
 
   private buildWhereClause(clauses: WhereClause<T>[], params: any[], def: 'AND' | 'OR'): string {
@@ -3750,20 +3846,41 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
     return clauses.map((clause, index) => {
       let conditionStr: string;
       switch (clause.type) {
-        case 'basic': params.push(clause.value); conditionStr = `${String(clause.column)} ${clause.operator} ?`; break;
-        case 'column': conditionStr = `${String(clause.column)} ${clause.operator} ${String(clause.value)}`; break;
-        case 'raw': 
-          // Para cláusulas raw, adiciona os bindings se existirem
-          if (clause.value && Array.isArray(clause.value)) {
-            params.push(...clause.value);
-          }
-          conditionStr = clause.sql!; 
+        case 'basic':
+          params.push(clause.value);
+          conditionStr = `${this.qIdent(String(clause.column))} ${clause.operator} ?`;
           break;
-        case 'in': if (!Array.isArray(clause.value) || clause.value.length === 0) { conditionStr = clause.not ? '1=1' : '1=0'; } else { params.push(...clause.value); const placeholders = clause.value.map(() => '?').join(', '); conditionStr = `${String(clause.column)} ${clause.not ? 'NOT IN' : 'IN'} (${placeholders})`; } break;
-        case 'null': conditionStr = `${String(clause.column)} IS ${clause.not ? 'NOT ' : ''}NULL`; break;
-        case 'between': params.push(...clause.value); conditionStr = `${String(clause.column)} ${clause.not ? 'NOT BETWEEN' : 'BETWEEN'} ? AND ?`; break;
-        case 'exists': const { sql, bindings } = clause.query!.toSql(); params.push(...bindings); conditionStr = `${clause.not ? 'NOT ' : ''}EXISTS (${sql})`; break;
-        default: throw new Error('Unsupported where clause type');
+        case 'column':
+          conditionStr = `${this.qIdent(String(clause.column))} ${clause.operator} ${this.qIdent(String(clause.value))}`;
+          break;
+        case 'raw':
+          params.push(...this.formatRawBindings(clause.value));
+          conditionStr = clause.sql!;
+          break;
+        case 'in':
+          if (!Array.isArray(clause.value) || clause.value.length === 0) {
+            conditionStr = clause.not ? '1=1' : '1=0';
+          } else {
+            params.push(...clause.value);
+            const placeholders = clause.value.map(() => '?').join(', ');
+            conditionStr = `${this.qIdent(String(clause.column))} ${clause.not ? 'NOT IN' : 'IN'} (${placeholders})`;
+          }
+          break;
+        case 'null':
+          conditionStr = `${this.qIdent(String(clause.column))} IS ${clause.not ? 'NOT ' : ''}NULL`;
+          break;
+        case 'between':
+          params.push(...clause.value);
+          conditionStr = `${this.qIdent(String(clause.column))} ${clause.not ? 'NOT BETWEEN' : 'BETWEEN'} ? AND ?`;
+          break;
+        case 'exists': {
+          const { sql, bindings } = clause.query!.toSql();
+          params.push(...bindings);
+          conditionStr = `${clause.not ? 'NOT ' : ''}EXISTS (${sql})`;
+          break;
+        }
+        default:
+          throw new Error('Unsupported where clause type');
       }
       const logical = index > 0 ? clause.logical || def : '';
       return `${logical} ${conditionStr}`;
@@ -3849,7 +3966,10 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  get<U = T>(): U | undefined { this.limit(1); const rows = this.allSync<U>(); return rows[0]; }
+  async get<U = T>(): Promise<U | undefined> {
+    const rows = await this.clone().limit(1).all<U>();
+    return rows[0];
+  }
   /**
    * Alias para o método .get().
    * Retorna o primeiro registro encontrado pela query.
@@ -3930,7 +4050,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  first<U = T>(): U | undefined { return this.get<U>(); }
+  async first<U = T>(): Promise<U | undefined> { return this.get<U>(); }
   
   /**
    * Busca um usuário específico pelo ID.
@@ -4014,7 +4134,9 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  find(id: string | number): T | undefined { return this.where('id' as any, '=', id).get(); }
+  async find(id: string | number): Promise<T | undefined> {
+    return this.clone().where('id' as any, '=', id).get();
+  }
 
   /**
    * Verifica se existem registros que correspondem aos critérios da query.
@@ -4111,7 +4233,13 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  async exists(): Promise<boolean> { const q = this.selectRaw('1').limit(1); const row = await q.all<any>(); return !!(row && row.length); }
+  async exists(): Promise<boolean> {
+    const q = this.clone();
+    q.selectColumns = [raw('1')];
+    q.limitValue = 1;
+    const row = await q.all<any>();
+    return !!(row && row.length);
+  }
   
   /**
    * Extrai uma coluna específica de todos os registros retornados.
@@ -4397,7 +4525,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
         const limit = this.limitValue === undefined ? results.length : this.limitValue;
         results = results.slice(offset, offset + limit);
         if (!this.includeAllRelations) return results;
-        const { attachRelations } = await import('./relations-resolver').catch(() => ({ attachRelations: async (x: any) => x }))
+        const { attachRelations } = await import('./relations-resolver.js').catch(() => ({ attachRelations: async (x: any) => x }))
         const selector = typeof this.includeAllRelations === 'function' ? this.includeAllRelations : undefined
         return (await attachRelations(this.tableName, results as any, selector)) as any
       }
@@ -4412,7 +4540,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
     let rows = res.data as U[];
     eventManager.emit(`querykit:trigger:AFTER:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'AFTER', rows, qb: qbHelper } as any);
     if (!this.includeAllRelations) return rows;
-    const { attachRelations } = await import('./relations-resolver').catch(() => ({ attachRelations: async (x: any) => x }))
+    const { attachRelations } = await import('./relations-resolver.js').catch(() => ({ attachRelations: async (x: any) => x }))
     const selector = typeof this.includeAllRelations === 'function' ? this.includeAllRelations : undefined
     return (await attachRelations(this.tableName, rows as any, selector)) as any
   }
@@ -4498,7 +4626,12 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
  *   }
  * }
  */
-  run(): any { const exec = QueryKitConfig.defaultExecutor; if (!exec || !exec.runSync) throw new Error('No executor configured for QueryKit'); const { sql, bindings } = this.toSql(); return exec.runSync(sql, bindings); }
+  run(): WriteResult {
+    const exec = getExecutorForTable(this.tableName, this.targetBanks);
+    if (!exec.runSync) throw new Error('No executor configured for QueryKit');
+    const { sql, bindings } = this.toSql();
+    return exec.runSync(sql, bindings);
+  }
   /**
  * Executa a query de forma síncrona e retorna todos os registros.
  * Versão síncrona do método all(), útil para operações que precisam ser executadas
@@ -4718,7 +4851,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
  *   }
  * }
  */
-  getSync<U = T>(): U | undefined { this.limit(1); return this.allSync<U>()[0]; }
+  getSync<U = T>(): U | undefined { return this.clone().limit(1).allSync<U>()[0]; }
   /**
  * Executa a query de forma síncrona e retorna o primeiro registro encontrado.
  * Alias para getSync(), mantém consistência com a API fluente.
@@ -4831,7 +4964,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
  *   }
  * }
  */
-  firstSync<U = T>(): U | undefined { this.limit(1); return this.getSync<U>(); }
+  firstSync<U = T>(): U | undefined { return this.getSync<U>(); }
   /**
  * Executa a query de forma síncrona e retorna um array com valores de uma coluna específica.
  * Versão síncrona do método pluck(), útil para extrair valores únicos de uma coluna.
@@ -5251,7 +5384,7 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  count(column: string = '*', alias?: string): this { return this.addAggregate('count', column, alias); }
+  count(column: string = '*', alias?: string): this { return this.addAggregate('count', column, alias || 'count'); }
   
   /**
    * Adiciona uma função de agregação SUM à query.
@@ -6109,7 +6242,11 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  range(field: keyof T | string, start?: Date, end?: Date): this { if (start) this.whereRaw(`${String(field)} >= ?`, [start.toISOString()]); if (end) this.whereRaw(`${String(field)} <= ?`, [end.toISOString()]); return this; }
+  range(field: keyof T | string, start?: Date, end?: Date): this {
+    if (start) this.whereRaw(`${this.qIdent(String(field))} >= ?`, [start.toISOString()]);
+    if (end) this.whereRaw(`${this.qIdent(String(field))} <= ?`, [end.toISOString()]);
+    return this;
+  }
   /**
    * Adiciona filtro de período relativo à data atual.
    * Permite filtrar registros dos últimos 24h, 7 dias, 30 dias ou período customizado.
@@ -6163,7 +6300,18 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *   }
    * }
    */
-  period(field: keyof T | string, periodKey?: '24h' | '7d' | '30d' | string): this { if (!periodKey) return this; const now = new Date(); let startDate: Date; switch (periodKey) { case '24h': startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); break; case '7d': startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break; case '30d': startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break; default: startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); } return this.whereRaw(`${String(field)} >= ?`, [startDate.toISOString()]); }
+  period(field: keyof T | string, periodKey?: '24h' | '7d' | '30d' | string): this {
+    if (!periodKey) return this;
+    const now = new Date();
+    let startDate: Date;
+    switch (periodKey) {
+      case '24h': startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
+      case '7d': startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+      case '30d': startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+      default: startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    }
+    return this.whereRaw(`${this.qIdent(String(field))} >= ?`, [startDate.toISOString()]);
+  }
 
   /**
    * Adiciona uma cláusula WHERE LIKE para busca de texto.
@@ -6416,21 +6564,17 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
     const executor = getExecutorForTable(this.tableName, this.targetBanks);
     let sql: string;
     
+    const col = this.qIdent(String(column));
     if (executor?.dialect === 'postgres') {
-      // PostgreSQL - ILIKE para case-insensitive
-      sql = `${String(column)} ILIKE ?`;
+      sql = `${col} ILIKE ?`;
     } else if (executor?.dialect === 'mysql') {
-      // MySQL - COLLATE para case-insensitive
-      sql = `${String(column)} LIKE ? COLLATE utf8_general_ci`;
+      sql = `${col} LIKE ? COLLATE utf8_general_ci`;
     } else if (executor?.dialect === 'oracle') {
-      // Oracle - UPPER() para case-insensitive
-      sql = `UPPER(${String(column)}) LIKE UPPER(?)`;
+      sql = `UPPER(${col}) LIKE UPPER(?)`;
     } else if (executor?.dialect === 'mssql') {
-      // SQL Server - COLLATE para case-insensitive
-      sql = `${String(column)} LIKE ? COLLATE SQL_Latin1_General_CP1_CI_AS`;
+      sql = `${col} LIKE ? COLLATE SQL_Latin1_General_CP1_CI_AS`;
     } else {
-      // Fallback universal - LOWER() para case-insensitive
-      sql = `LOWER(${String(column)}) LIKE LOWER(?)`;
+      sql = `LOWER(${col}) LIKE LOWER(?)`;
     }
     
     return this.whereRaw(sql, [pattern]); 
@@ -6806,49 +6950,53 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    */
   unionAll(query: QueryBuilder<any>): this { this.unionParts.push({ type: 'UNION ALL', query }); return this; }
 
-  async make(): Promise<{ changes: number; lastInsertRowid: number | bigint }> {
-    const exec = getExecutorForTable(this.tableName, this.targetBanks) as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
+  private async execWrite(exec: DatabaseExecutor, sql: string, bindings: any[]): Promise<WriteResult> {
+    if (exec.run) return exec.run(sql, bindings);
+    if (exec.runSync) return exec.runSync(sql, bindings);
+    const raw = await exec.executeQuery(sql, bindings);
+    return {
+      changes: raw.affectedRows ?? raw.data?.length ?? 0,
+      lastInsertRowid: (raw.lastInsertId as any) ?? 0,
+    };
+  }
+
+  async make(): Promise<WriteResult> {
+    const exec = getExecutorForTable(this.tableName, this.targetBanks);
     if (!this.pendingAction) throw new Error('No pending write action to execute. Call insert(), update(), or delete() before .make()');
     const { type, data } = this.pendingAction;
-
-    const mapAsyncResult = (raw: any): { changes: number; lastInsertRowid: number | bigint } => {
-      if (Array.isArray(raw)) {
-        const info = raw[1] || {};
-        const changes = info.affectedRows ?? info.changes ?? 0;
-        const lastId = info.insertId ?? info.lastInsertId ?? info.lastInsertRowid ?? 0;
-        return { changes, lastInsertRowid: lastId };
-      }
-      const changes = raw?.affectedRows ?? raw?.changes ?? 0;
-      const lastId = raw?.lastInsertId ?? raw?.lastInsertRowid ?? 0;
-      return { changes, lastInsertRowid: lastId };
-    };
-
+    const dialect = this.dialect();
     const qbHelper = <X = any>(t?: string) => new QueryBuilder<X>(t || this.tableName);
+
+    const runOn = async (target: DatabaseExecutor, sql: string, bindings: any[]) => this.execWrite(target, sql, bindings);
 
     switch (type) {
       case 'insert': {
-        const obj = Array.isArray(data) ? data[0] : data;
-        const columns = Object.keys(obj);
-        const values = Object.values(obj);
-        const placeholders = columns.map(() => '?').join(', ');
-        const sql = `INSERT INTO ${this.tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
-        eventManager.emit(`querykit:trigger:BEFORE:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'BEFORE', data: obj, where: undefined, qb: qbHelper } as any);
-        const res = exec.runSync ? exec.runSync(sql, values) : await exec.executeQuery(sql, values);
-        const mapped = exec.runSync ? res : mapAsyncResult(res);
-        eventManager.emit(`querykit:trigger:AFTER:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'AFTER', data: obj, result: mapped, qb: qbHelper } as any);
+        const rows: Record<string, any>[] = Array.isArray(data) ? data : [data];
+        if (!rows.length) throw new Error('insert() requires at least one row');
+        const columns = Object.keys(rows[0]!);
+        if (!columns.length) throw new Error('insert() row has no columns');
+        const quotedCols = columns.map((c) => this.qIdent(c)).join(', ');
+        const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
+        const placeholders = rows.map(() => rowPlaceholder).join(', ');
+        const values = rows.flatMap((row) => columns.map((c) => row[c]));
+        let sql = `INSERT INTO ${this.qTable()} (${quotedCols}) VALUES ${placeholders}`;
+        sql = returningInsertSql(sql, dialect);
+        eventManager.emit(`querykit:trigger:BEFORE:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'BEFORE', data: rows, where: undefined, qb: qbHelper } as any);
+        const mapped = await runOn(exec, sql, values);
+        eventManager.emit(`querykit:trigger:AFTER:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'AFTER', data: rows, result: mapped, qb: qbHelper } as any);
         this.pendingAction = undefined;
         return mapped;
       }
       case 'update': {
         if (this.whereClauses.length === 0) throw new Error('Update operations must have a WHERE clause.');
-        const setClauses = Object.keys(data).map(k => `${k} = ?`).join(', ');
+        const keys = Object.keys(data || {});
+        if (!keys.length) throw new Error('update() requires at least one column');
+        const setClauses = keys.map((k) => `${this.qIdent(k)} = ?`).join(', ');
         const params = Object.values(data);
         const where = this.buildWhereClause(this.whereClauses, params as any[], 'AND');
-        const sql = `UPDATE ${this.tableName} SET ${setClauses} WHERE ${where}`;
+        const sql = `UPDATE ${this.qTable()} SET ${setClauses} WHERE ${where}`;
         eventManager.emit(`querykit:trigger:BEFORE:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'BEFORE', data, where: { sql: where, bindings: params }, qb: qbHelper } as any);
-        const res = exec.runSync ? exec.runSync(sql, params) : await exec.executeQuery(sql, params);
-        const mapped = exec.runSync ? res : mapAsyncResult(res);
+        const mapped = await runOn(exec, sql, params);
         eventManager.emit(`querykit:trigger:AFTER:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'AFTER', data, where: { sql: where, bindings: params }, result: mapped, qb: qbHelper } as any);
         this.pendingAction = undefined;
         return mapped;
@@ -6857,73 +7005,61 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
         if (this.whereClauses.length === 0) throw new Error('Delete operations must have a WHERE clause.');
         const params: any[] = [];
         const where = this.buildWhereClause(this.whereClauses, params, 'AND');
-        const sql = `DELETE FROM ${this.tableName} WHERE ${where}`;
+        const sql = `DELETE FROM ${this.qTable()} WHERE ${where}`;
         eventManager.emit(`querykit:trigger:BEFORE:DELETE:${this.tableName}`, { table: this.tableName, action: 'DELETE', timing: 'BEFORE', where: { sql: where, bindings: params }, qb: qbHelper } as any);
-        const res = exec.runSync ? exec.runSync(sql, params) : await exec.executeQuery(sql, params);
-        const mapped = exec.runSync ? res : mapAsyncResult(res);
+        const mapped = await runOn(exec, sql, params);
         eventManager.emit(`querykit:trigger:AFTER:DELETE:${this.tableName}`, { table: this.tableName, action: 'DELETE', timing: 'AFTER', where: { sql: where, bindings: params }, result: mapped, qb: qbHelper } as any);
         this.pendingAction = undefined;
         return mapped;
       }
-      case 'increment': {
-        if (this.whereClauses.length === 0) throw new Error('Update operations must have a WHERE clause.');
-        const { column, amount } = data as { column: string; amount: number };
-        const params: any[] = [amount ?? 1];
-        const where = this.buildWhereClause(this.whereClauses, params as any[], 'AND');
-        const sql = `UPDATE ${this.tableName} SET ${column} = ${column} + ? WHERE ${where}`;
-        eventManager.emit(`querykit:trigger:BEFORE:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'BEFORE', data: { column, amount }, where: { sql: where, bindings: params }, qb: qbHelper } as any);
-        const res = exec.runSync ? exec.runSync(sql, params) : await exec.executeQuery(sql, params);
-        const mapped = exec.runSync ? res : mapAsyncResult(res);
-        eventManager.emit(`querykit:trigger:AFTER:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'AFTER', data: { column, amount }, where: { sql: where, bindings: params }, result: mapped, qb: qbHelper } as any);
-        this.pendingAction = undefined;
-        return mapped;
-      }
+      case 'increment':
       case 'decrement': {
         if (this.whereClauses.length === 0) throw new Error('Update operations must have a WHERE clause.');
         const { column, amount } = data as { column: string; amount: number };
         const params: any[] = [amount ?? 1];
         const where = this.buildWhereClause(this.whereClauses, params as any[], 'AND');
-        const sql = `UPDATE ${this.tableName} SET ${column} = ${column} - ? WHERE ${where}`;
+        const ident = this.qIdent(String(column));
+        const op = type === 'increment' ? '+' : '-';
+        const sql = `UPDATE ${this.qTable()} SET ${ident} = ${ident} ${op} ? WHERE ${where}`;
         eventManager.emit(`querykit:trigger:BEFORE:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'BEFORE', data: { column, amount }, where: { sql: where, bindings: params }, qb: qbHelper } as any);
-        const res = exec.runSync ? exec.runSync(sql, params) : await exec.executeQuery(sql, params);
-        const mapped = exec.runSync ? res : mapAsyncResult(res);
+        const mapped = await runOn(exec, sql, params);
         eventManager.emit(`querykit:trigger:AFTER:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'AFTER', data: { column, amount }, where: { sql: where, bindings: params }, result: mapped, qb: qbHelper } as any);
         this.pendingAction = undefined;
         return mapped;
       }
       case 'updateOrInsert': {
         const { attributes, values } = data as { attributes: Record<string, any>; values: Record<string, any> };
-        // Attempt update
-        const setClauses = Object.keys(values).map(k => `${k} = ?`).join(', ');
-        const params = Object.values(values);
-        // Build where from attributes, ensuring params appended for where after values
-        const whereClausesBackup = [...this.whereClauses];
-        this.whereClauses = [];
-        Object.entries(attributes).forEach(([k, v]) => this.where(k, '=', v));
-        const where = this.buildWhereClause(this.whereClauses, params as any[], 'AND');
-        const sqlUpd = `UPDATE ${this.tableName} SET ${setClauses} WHERE ${where}`;
-        eventManager.emit(`querykit:trigger:BEFORE:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'BEFORE', data: values, where: { sql: where, bindings: params }, qb: qbHelper } as any);
-        const resUpd = exec.runSync ? exec.runSync(sqlUpd, params) : await exec.executeQuery(sqlUpd, params);
-        const mappedUpd = exec.runSync ? resUpd : mapAsyncResult(resUpd);
-        eventManager.emit(`querykit:trigger:AFTER:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'AFTER', data: values, where: { sql: where, bindings: params }, result: mappedUpd, qb: qbHelper } as any);
-        let result = mappedUpd;
-        if (!mappedUpd.changes) {
-          // Perform insert with merged attributes+values
-          const insertObj = { ...attributes, ...values };
-          const columns = Object.keys(insertObj);
-          const vals = Object.values(insertObj);
-          const placeholders = columns.map(() => '?').join(', ');
-          const sqlIns = `INSERT INTO ${this.tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
-          eventManager.emit(`querykit:trigger:BEFORE:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'BEFORE', data: insertObj, where: undefined, qb: qbHelper } as any);
-          const resIns = exec.runSync ? exec.runSync(sqlIns, vals) : await exec.executeQuery(sqlIns, vals);
-          const mappedIns = exec.runSync ? resIns : mapAsyncResult(resIns);
-          eventManager.emit(`querykit:trigger:AFTER:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'AFTER', data: insertObj, result: mappedIns, qb: qbHelper } as any);
-          result = mappedIns;
-        }
-        // restore whereClauses
-        this.whereClauses = whereClausesBackup;
+        const work = async (target: DatabaseExecutor) => {
+          const setKeys = Object.keys(values);
+          const setClauses = setKeys.map((k) => `${this.qIdent(k)} = ?`).join(', ');
+          const params = Object.values(values);
+          const whereClausesBackup = [...this.whereClauses];
+          this.whereClauses = [];
+          Object.entries(attributes).forEach(([k, v]) => this.where(k, '=', v));
+          const where = this.buildWhereClause(this.whereClauses, params as any[], 'AND');
+          const sqlUpd = `UPDATE ${this.qTable()} SET ${setClauses || this.qIdent(Object.keys(attributes)[0] || 'id') + ' = ' + this.qIdent(Object.keys(attributes)[0] || 'id')} WHERE ${where}`;
+          eventManager.emit(`querykit:trigger:BEFORE:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'BEFORE', data: values, where: { sql: where, bindings: params }, qb: qbHelper } as any);
+          const mappedUpd = await runOn(target, sqlUpd, params);
+          eventManager.emit(`querykit:trigger:AFTER:UPDATE:${this.tableName}`, { table: this.tableName, action: 'UPDATE', timing: 'AFTER', data: values, where: { sql: where, bindings: params }, result: mappedUpd, qb: qbHelper } as any);
+          let result = mappedUpd;
+          if (!mappedUpd.changes) {
+            const insertObj = { ...attributes, ...values };
+            const columns = Object.keys(insertObj);
+            const vals = Object.values(insertObj);
+            const placeholders = columns.map(() => '?').join(', ');
+            let sqlIns = `INSERT INTO ${this.qTable()} (${columns.map((c) => this.qIdent(c)).join(', ')}) VALUES (${placeholders})`;
+            sqlIns = returningInsertSql(sqlIns, dialect);
+            eventManager.emit(`querykit:trigger:BEFORE:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'BEFORE', data: insertObj, where: undefined, qb: qbHelper } as any);
+            const mappedIns = await runOn(target, sqlIns, vals);
+            eventManager.emit(`querykit:trigger:AFTER:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'AFTER', data: insertObj, result: mappedIns, qb: qbHelper } as any);
+            result = mappedIns;
+          }
+          this.whereClauses = whereClausesBackup;
+          return result;
+        };
         this.pendingAction = undefined;
-        return result;
+        if (exec.transaction) return exec.transaction((tx) => work(tx));
+        return work(exec);
       }
       default:
         throw new Error(`Unsupported pending action: ${type}`);
@@ -7124,24 +7260,25 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
     const executor = getExecutorForTable(this.tableName, this.targetBanks);
     let sql: string;
     
+    const col = this.qIdent(String(column));
+    const bound = typeof value === 'string' ? value : JSON.stringify(value);
     if (executor?.dialect === 'postgres') {
-      sql = `${String(column)} @> ?`; // PostgreSQL
+      sql = `${col} @> ?::jsonb`;
     } else if (executor?.dialect === 'mysql') {
-      sql = `JSON_CONTAINS(${String(column)}, ?)`; // MySQL
+      sql = `JSON_CONTAINS(${col}, ?)`;
     } else if (executor?.dialect === 'oracle') {
-      sql = `JSON_EXISTS(${String(column)}, '$')`; // Oracle
+      sql = `JSON_EXISTS(${col}, '$')`;
     } else if (executor?.dialect === 'mssql') {
-      sql = `${String(column)} LIKE '%' + ? + '%'`; // SQL Server (fallback)
+      sql = `${col} LIKE '%' + ? + '%'`;
     } else {
-      // Fallback universal - funciona em qualquer banco
-      sql = `${String(column)} LIKE '%' + ? + '%'`;
+      sql = `${col} LIKE '%' || ? || '%'`;
     }
-    
-    this.whereClauses.push({ 
-      type: 'raw', 
-      sql, 
+
+    this.whereClauses.push({
+      type: 'raw',
+      sql,
       logical: 'AND',
-      value: value
+      value: [bound],
     });
     return this;
   }
@@ -8282,7 +8419,10 @@ export class QueryBuilder<T extends { id?: any } & Record<string, any>> {
    *     }
    *   }
    */
-  havingRaw(sql: string, bindings: any[] = [], logical: 'AND' | 'OR' = 'AND'): this { this.havingClauses.push({ type: 'raw', sql, logical } as any); return this; }
+  havingRaw(sql: string, bindings: any[] = [], logical: 'AND' | 'OR' = 'AND'): this {
+    this.havingClauses.push({ type: 'raw', sql, logical, value: bindings });
+    return this;
+  }
   /**
  * Seleciona todas as colunas exceto as especificadas.
  * Útil para excluir colunas sensíveis ou desnecessárias da consulta.
@@ -8506,7 +8646,7 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
     const relevanceExpression = columns
       .map((col, index) => {
         const weight = normalizedWeights[index];
-        return `CASE WHEN ${String(col)} LIKE ? THEN ${weight} ELSE 0 END`;
+        return `CASE WHEN ${this.qIdent(String(col))} LIKE ? THEN ${weight} ELSE 0 END`;
       })
       .join(' + ');
 
@@ -8592,7 +8732,7 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
   
     // Para compatibilidade com todos os bancos, usamos LIKE com wildcards
     const searchConditions = columns.map(col =>
-      `${String(col)} LIKE ? OR ${String(col)} LIKE ? OR ${String(col)} LIKE ?`
+      `${this.qIdent(String(col))} LIKE ? OR ${this.qIdent(String(col))} LIKE ? OR ${this.qIdent(String(col))} LIKE ?`
     ).join(' OR ');
   
     const bindings = columns.flatMap(() => [
@@ -8606,10 +8746,10 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
     // Adiciona score de similaridade básico aos selectColumns
     const similarityExpression = `
       CASE 
-        WHEN ${columns.map(col => `${String(col)} = ?`).join(' OR ')} THEN 1.0
-        WHEN ${columns.map(col => `${String(col)} LIKE ?`).join(' OR ')} THEN 0.9
-        WHEN ${columns.map(col => `${String(col)} LIKE ?`).join(' OR ')} THEN 0.8
-        WHEN ${columns.map(col => `${String(col)} LIKE ?`).join(' OR ')} THEN 0.7
+        WHEN ${columns.map(col => `${this.qIdent(String(col))} = ?`).join(' OR ')} THEN 1.0
+        WHEN ${columns.map(col => `${this.qIdent(String(col))} LIKE ?`).join(' OR ')} THEN 0.9
+        WHEN ${columns.map(col => `${this.qIdent(String(col))} LIKE ?`).join(' OR ')} THEN 0.8
+        WHEN ${columns.map(col => `${this.qIdent(String(col))} LIKE ?`).join(' OR ')} THEN 0.7
         ELSE 0.5
       END
     `;

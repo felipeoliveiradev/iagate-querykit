@@ -25,6 +25,7 @@ class Exec implements DatabaseExecutor {
     return { data: [] }
   }
   getSeen() { return this.seenSql.slice() }
+  normalized() { return this.seenSql.join('\n').replace(/["`\[\]]/g, '') }
 }
 
 describe('MigrationManager', () => {
@@ -86,7 +87,7 @@ describe('MigrationManager', () => {
       setDefaultExecutor(ex as any)
       await resetMigrations({ executor: ex as any })
       await migrateUp([spec(`${dialect}_001`)], { executor: ex as any })
-      const sql = (ex as any).getSeen().join('\n')
+      const sql = (ex as any).normalized()
       for (const p of patterns) expect(sql).toMatch(p)
     }
   })
@@ -197,7 +198,7 @@ describe('MigrationManager', () => {
       setDefaultExecutor(ex as any)
       await resetMigrations({ executor: ex as any })
       await migrateUp([{ id: `${dialect}_all_types`, up: buildAllTypes() }], { executor: ex as any })
-      const sql = (ex as any).getSeen().join('\n')
+      const sql = (ex as any).normalized()
       const exp = expectations[dialect]
       for (const key of Object.keys(exp)) {
         expect(sql).toMatch(exp[key as keyof typeof exp])
@@ -241,7 +242,7 @@ describe('MigrationManager', () => {
       await resetMigrations({ executor: ex as any })
       for (const [val, regs] of vals) {
         await migrateUp([{ id: `${dialect}_defaults_${String(val)}`.replace(/\W+/g,'_'), up: buildWithDefaults(val) }], { executor: ex as any })
-        const sql = (ex as any).getSeen().join('\n')
+        const sql = (ex as any).normalized()
         for (const r of regs) expect(sql).toMatch(r)
       }
     }
@@ -265,7 +266,7 @@ describe('MigrationManager', () => {
       setDefaultExecutor(ex as any)
       await resetMigrations({ executor: ex as any })
       await migrateUp([spec(`${dialect}_uuidv4`)], { executor: ex as any })
-      const sql = (ex as any).getSeen().join('\n')
+      const sql = (ex as any).normalized()
       expect(sql).toMatch(pattern)
     }
   })
@@ -288,7 +289,7 @@ describe('MigrationManager', () => {
       setDefaultExecutor(ex as any)
       await resetMigrations({ executor: ex as any })
       await migrateUp([mkSpec(`${dialect}_ai`)], { executor: ex as any })
-      const sql = (ex as any).getSeen().join('\n')
+      const sql = (ex as any).normalized()
       expect(sql).toMatch(re)
     }
   })
@@ -304,17 +305,18 @@ describe('MigrationManager', () => {
     setDefaultExecutor(ex as any)
     await resetMigrations({ executor: ex as any })
     await migrateUp([spec('pg_serial')], { executor: ex as any })
-    const sql = (ex as any).getSeen().join('\n')
+    const sql = (ex as any).normalized()
     expect(sql).toMatch(/CREATE TABLE s \(a SERIAL PRIMARY KEY, b BIGSERIAL\)/i)
   })
 
   it('emits REFERENCES and createJoinTable with unique index', async () => {
     class ExecCapture implements DatabaseExecutor {
+      dialect = 'sqlite' as const
       private seen: string[] = []
       executeQuerySync?(sql: string, bindings: any[]): { data: any[] } { this.seen.push(sql); return { data: [] } }
       async executeQuery(sql: string, bindings: any[] = []) { this.seen.push(sql); return { data: [] } }
       runSync?(sql: string, bindings: any[]): any { this.seen.push(sql); return { changes: 1 } }
-      getSeen() { return this.seen.join('\n') }
+      getSeen() { return this.seen.join('\n').replace(/["`\[\]]/g, '') }
     }
     const ex = new ExecCapture()
     setDefaultExecutor(ex as any)

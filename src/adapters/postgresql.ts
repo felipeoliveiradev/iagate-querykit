@@ -1,18 +1,22 @@
-import type { DatabaseExecutor, QueryResult } from '../types';
+import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
+import { toPostgresParams } from '../sql/placeholders.js';
+import { isSelectLike } from '../sql/dialect.js';
 import { createRequire } from 'node:module';
 
 let pg: any;
 function ensurePg() {
   if (pg) return;
   const mocked = (globalThis as any).__vitest_mocks__?.pg;
-  if (mocked) { pg = mocked; return; }
-  try { const req = createRequire(import.meta.url); pg = req('pg'); } catch { throw new Error('pg is required: npm install pg'); }
-}
-
-function toPgParams(sql: string): { sql: string } {
-  let index = 0;
-  const out = sql.replace(/\?/g, () => `$${++index}`);
-  return { sql: out };
+  if (mocked) {
+    pg = mocked;
+    return;
+  }
+  try {
+    const req = createRequire(import.meta.url);
+    pg = req('pg');
+  } catch {
+    throw new Error('pg is required: npm install pg');
+  }
 }
 
 export type PostgresExecutorConfig = {
@@ -24,30 +28,93 @@ export type PostgresExecutorConfig = {
   database?: string;
   ssl?: boolean | object;
   poolSize?: number;
+  pool?: any;
 };
 
-export class PostgresExecutor implements DatabaseExecutor {
-  public dialect: 'postgres' = 'postgres';
-  private pool: any;
+function mapResult(res: any): QueryResult {
+  const rows = res?.rows || [];
+  const affectedRows = res?.rowCount;
+  let lastInsertId: any;
+  if (rows.length && (rows[0].id !== undefined || rows[0].ID !== undefined)) {
+    lastInsertId = rows[0].id ?? rows[0].ID;
+  }
+  return { data: rows, affectedRows, lastInsertId };
+}
 
-  constructor(private config: PostgresExecutorConfig = {}) {
+function asWrite(res: QueryResult): WriteResult {
+  return {
+    changes: res.affectedRows ?? 0,
+    lastInsertRowid: (res.lastInsertId as any) ?? 0,
+  };
+}
+
+export class PostgresExecutor implements DatabaseExecutor {
+  public readonly dialect = 'postgres' as const;
+  private pool: any;
+  private ownsPool: boolean;
+
+  constructor(config: PostgresExecutorConfig = {}) {
     ensurePg();
-    const { Pool } = pg;
-    this.pool = new Pool({
-      connectionString: config.connectionString,
-      host: config.host,
-      port: config.port,
-      user: config.user,
-      password: config.password,
-      database: config.database,
-      ssl: config.ssl,
-      max: config.poolSize || 10,
-    });
+    if (config.pool) {
+      this.pool = config.pool;
+      this.ownsPool = false;
+    } else {
+      const { Pool } = pg;
+      this.pool = new Pool({
+        connectionString: config.connectionString,
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: config.database,
+        ssl: config.ssl,
+        max: config.poolSize || 10,
+      });
+      this.ownsPool = true;
+    }
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
-    const { sql: text } = toPgParams(sql);
+    const text = toPostgresParams(sql);
     const res = await this.pool.query({ text, values: bindings });
-    return { data: res.rows, affectedRows: (res as any).rowCount };
+    return mapResult(res);
   }
-} 
+
+  async run(sql: string, bindings: any[] = []): Promise<WriteResult> {
+    return asWrite(await this.executeQuery(sql, bindings));
+  }
+
+  async transaction<T>(fn: (tx: DatabaseExecutor) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    const tx: DatabaseExecutor = {
+      dialect: 'postgres',
+      executeQuery: async (sql: string, bindings: any[] = []) => {
+        const text = toPostgresParams(sql);
+        return mapResult(await client.query({ text, values: bindings }));
+      },
+      run: async (sql: string, bindings: any[] = []) =>
+        asWrite(await tx.executeQuery(sql, bindings)),
+    };
+    try {
+      await client.query('BEGIN');
+      const result = await fn(tx);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.ownsPool && this.pool && typeof this.pool.end === 'function') {
+      await this.pool.end();
+    }
+  }
+}

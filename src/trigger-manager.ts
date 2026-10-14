@@ -1,5 +1,68 @@
-import { QueryKitConfig } from './config';
-import { eventManager } from './event-manager';
+import { QueryKitConfig } from './config.js';
+import { eventManager } from './event-manager.js';
+import { quoteIdent } from './sql/identifiers.js';
+import type { DatabaseExecutor } from './types.js';
+import type { SqlDialect } from './sql/dialect.js';
+
+function getExec(explicit?: DatabaseExecutor): DatabaseExecutor {
+  const exec = explicit || QueryKitConfig.defaultExecutor;
+  if (!exec) throw new Error('No executor configured for QueryKit');
+  return exec;
+}
+
+function dialectOf(exec: DatabaseExecutor): SqlDialect {
+  return exec.dialect || QueryKitConfig.defaultDialect || 'sqlite';
+}
+
+export function buildCreateTriggerSql(
+  name: string,
+  tableName: string,
+  timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF',
+  event: 'INSERT' | 'UPDATE' | 'DELETE',
+  body: string,
+  dialect: SqlDialect,
+): string[] {
+  const ident = quoteIdent(name, dialect);
+  const table = quoteIdent(tableName, dialect);
+  const clean = body.trim().replace(/;?\s*$/, '');
+  switch (dialect) {
+    case 'postgres': {
+      const fn = quoteIdent(`querykit_${name}_fn`, dialect);
+      return [
+        `CREATE OR REPLACE FUNCTION ${fn}() RETURNS trigger AS $$ BEGIN ${clean}; IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF; END; $$ LANGUAGE plpgsql`,
+        `DROP TRIGGER IF EXISTS ${ident} ON ${table}`,
+        `CREATE TRIGGER ${ident} ${timing === 'INSTEAD OF' ? 'INSTEAD OF' : timing} ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION ${fn}()`,
+      ];
+    }
+    case 'mysql':
+      return [
+        `CREATE TRIGGER ${ident} ${timing === 'INSTEAD OF' ? 'BEFORE' : timing} ${event} ON ${table} FOR EACH ROW BEGIN ${clean}; END`,
+      ];
+    case 'mssql':
+      return [
+        `CREATE TRIGGER ${ident} ON ${table} ${timing === 'BEFORE' ? 'INSTEAD OF' : 'AFTER'} ${event} AS BEGIN ${clean}; END`,
+      ];
+    case 'oracle':
+      return [
+        `CREATE OR REPLACE TRIGGER ${ident} ${timing === 'INSTEAD OF' ? 'BEFORE' : timing} ${event} ON ${table} FOR EACH ROW BEGIN ${clean}; END;`,
+      ];
+    default:
+      return [
+        `CREATE TRIGGER IF NOT EXISTS ${ident} ${timing} ${event} ON ${table} FOR EACH ROW BEGIN ${clean}; END`,
+      ];
+  }
+}
+
+export function buildDropTriggerSql(name: string, dialect: SqlDialect, tableName?: string): string {
+  const ident = quoteIdent(name, dialect);
+  if (dialect === 'postgres' && tableName) {
+    return `DROP TRIGGER IF EXISTS ${ident} ON ${quoteIdent(tableName, dialect)}`;
+  }
+  if (dialect === 'oracle') {
+    return `BEGIN EXECUTE IMMEDIATE 'DROP TRIGGER ${ident}'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -4080 THEN RAISE; END IF; END;`;
+  }
+  return `DROP TRIGGER IF EXISTS ${ident}`;
+}
 
 /**
  * Tipos de eventos que podem disparar triggers SQL.
@@ -205,9 +268,10 @@ export class TriggerManager {
       return;
     }
     if (typeof body === 'string') {
-      const exec = QueryKitConfig.defaultExecutor;
-      if (!exec || !exec.runSync) throw new Error('No executor configured for QueryKit');
-      exec.runSync(body, []);
+      const exec = getExec();
+      if (exec.run) await exec.run(body, []);
+      else if (exec.runSync) exec.runSync(body, []);
+      else await exec.executeQuery(body, []);
       return;
     }
     if (typeof body === 'function') {
@@ -498,27 +562,30 @@ export class TriggerManager {
   }
 
   // SQL-level triggers (multi-vendor)
-  public createTrigger(name: string, tableName: string, timing: TriggerTiming, event: TriggerEvent, body: string): void {
-    const createTriggerSql = `
-      CREATE TRIGGER IF NOT EXISTS ${name}
-      ${timing} ${event} ON ${tableName}
-      FOR EACH ROW
-      BEGIN
-        ${body}
-      END;
-    `;
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
-    if (exec.runSync) exec.runSync(createTriggerSql, []);
-    else exec.executeQuery(createTriggerSql, []);
+  public createTrigger(name: string, tableName: string, timing: TriggerTiming, event: TriggerEvent, body: string, executor?: DatabaseExecutor): void {
+    const exec = getExec(executor);
+    const statements = buildCreateTriggerSql(name, tableName, timing, event, body, dialectOf(exec));
+    for (const sql of statements) {
+      if (exec.runSync) exec.runSync(sql, []);
+      else void exec.executeQuery(sql, []);
+    }
   }
 
-  public dropTrigger(name: string): void {
-    const dropTriggerSql = `DROP TRIGGER IF EXISTS ${name}`;
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
-    if (exec.runSync) exec.runSync(dropTriggerSql, []);
-    else exec.executeQuery(dropTriggerSql, []);
+  public async createTriggerAsync(name: string, tableName: string, timing: TriggerTiming, event: TriggerEvent, body: string, executor?: DatabaseExecutor): Promise<void> {
+    const exec = getExec(executor);
+    const statements = buildCreateTriggerSql(name, tableName, timing, event, body, dialectOf(exec));
+    for (const sql of statements) {
+      if (exec.run) await exec.run(sql, []);
+      else if (exec.runSync) exec.runSync(sql, []);
+      else await exec.executeQuery(sql, []);
+    }
+  }
+
+  public dropTrigger(name: string, executor?: DatabaseExecutor, tableName?: string): void {
+    const exec = getExec(executor);
+    const sql = buildDropTriggerSql(name, dialectOf(exec), tableName);
+    if (exec.runSync) exec.runSync(sql, []);
+    else void exec.executeQuery(sql, []);
   }
 
   private triggerQueriesByDialect(dialect?: string) {
@@ -540,16 +607,16 @@ export class TriggerManager {
   }
 
   public listTriggers(): string[] {
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
+    const exec = getExec();
     if (!exec.executeQuerySync) return [];
-    const candidates = this.triggerQueriesByDialect(exec.dialect || (QueryKitConfig as any).defaultDialect);
+    const dialect = dialectOf(exec);
+    const candidates = this.triggerQueriesByDialect(dialect);
     for (const c of candidates) {
       try {
         const res = exec.executeQuerySync(c.sql, []);
         const rows = (res?.data as any[]) || [];
         const names = rows.map(c.map).filter(Boolean);
-        if (names.length || rows.length >= 0) return names;
+        if (exec.dialect || names.length) return names;
       } catch { /* try next */ }
     }
     return [];
@@ -561,16 +628,16 @@ export class TriggerManager {
   }
 
   public async listTriggersAsync(): Promise<string[]> {
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
+    const exec = getExec();
     if (exec.executeQuerySync) return this.listTriggers();
-    const candidates = this.triggerQueriesByDialect(exec.dialect || (QueryKitConfig as any).defaultDialect);
+    const dialect = dialectOf(exec);
+    const candidates = this.triggerQueriesByDialect(dialect);
     for (const c of candidates) {
       try {
         const res = await exec.executeQuery(c.sql, []);
         const rows = (res?.data as any[]) || [];
         const names = rows.map(c.map).filter(Boolean);
-        if (names.length || rows.length >= 0) return names;
+        if (exec.dialect || names.length) return names;
       } catch { /* try next */ }
     }
     return [];

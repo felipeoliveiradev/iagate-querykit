@@ -1,6 +1,7 @@
-import type { DatabaseExecutor } from './types'
-import { QueryKitConfig, getExecutorForTable } from './config'
-import { QueryBuilder } from './query-builder'
+import type { DatabaseExecutor } from './types.js'
+import { getExecutorForTable } from './config.js'
+import { QueryBuilder } from './query-builder.js'
+import { quoteIdent } from './sql/identifiers.js'
 
 /**
  * Contexto passado para execução de seeds.
@@ -153,9 +154,11 @@ export type RunSeedOptions<T = any> = {
 export async function runSeed<T = any>(table: string, dataOrSeed: Partial<T>[] | SeedRunnable<T>, opts: RunSeedOptions<T> = {}): Promise<number> {
 	const exec = getExecutorForTable(table)
 	if (!exec) throw new Error('No executor configured for QueryKit')
-	if (opts.truncate) {
-		if ((exec as any).runSync) (exec as any).runSync(`DELETE FROM ${table}`, [])
-		else await exec.executeQuery(`DELETE FROM ${table}`, [])
+	const quoted = quoteIdent(table, exec.dialect || 'sqlite')
+	const truncate = async (target: DatabaseExecutor) => {
+		if (target.run) await target.run(`DELETE FROM ${quoted}`, [])
+		else if (target.runSync) target.runSync(`DELETE FROM ${quoted}`, [])
+		else await target.executeQuery(`DELETE FROM ${quoted}`, [])
 	}
 	let rows: Partial<T>[]
 	if (Array.isArray(dataOrSeed)) rows = dataOrSeed
@@ -164,31 +167,42 @@ export async function runSeed<T = any>(table: string, dataOrSeed: Partial<T>[] |
 		const out = await dataOrSeed.run(ctx)
 		rows = out || []
 	}
-	if (!rows.length) return 0
-	// batch insert with optional conflict handling
+	if (!rows.length) {
+		if (opts.truncate) await truncate(exec)
+		return 0
+	}
 	const uniqueKeys = (opts.uniqueBy || []) as string[]
 	const shouldUpsert = !!opts.upsert
 	const shouldIgnore = !!opts.ignoreDuplicates
-	for (const row of rows) {
-		if (uniqueKeys.length && shouldIgnore) {
-			const attributes: Record<string, any> = {}
-			for (const key of uniqueKeys) attributes[String(key)] = (row as any)[String(key)]
-			const exists = await new QueryBuilder<any>(table).whereAll(attributes).exists()
-			if (exists) continue
-			await new QueryBuilder<any>(table).insert(row).make()
-			continue
-		}
-		if (uniqueKeys.length && shouldUpsert) {
-			const attributes: Record<string, any> = {}
-			const values: Record<string, any> = {}
-			for (const [k, v] of Object.entries(row)) {
-				if (uniqueKeys.includes(k)) attributes[k] = v
-				else values[k] = v
+
+	const insertAll = async () => {
+		if (opts.truncate) await truncate(exec)
+		for (const row of rows) {
+			if (uniqueKeys.length && shouldIgnore) {
+				const attributes: Record<string, any> = {}
+				for (const key of uniqueKeys) attributes[String(key)] = (row as any)[String(key)]
+				const exists = await new QueryBuilder<any>(table).whereAll(attributes).exists()
+				if (exists) continue
+				await new QueryBuilder<any>(table).insert(row).make()
+				continue
 			}
-			await new QueryBuilder<any>(table).updateOrInsert(attributes, values).make()
-			continue
+			if (uniqueKeys.length && shouldUpsert) {
+				const attributes: Record<string, any> = {}
+				const values: Record<string, any> = {}
+				for (const [k, v] of Object.entries(row)) {
+					if (uniqueKeys.includes(k)) attributes[k] = v
+					else values[k] = v
+				}
+				await new QueryBuilder<any>(table).updateOrInsert(attributes, values).make()
+				continue
+			}
+			await new QueryBuilder<any>(table).insert(row).make()
 		}
-		await new QueryBuilder<any>(table).insert(row).make()
+		return rows.length
 	}
-	return rows.length
+
+	if (exec.transaction && opts.truncate) {
+		return exec.transaction(async () => insertAll())
+	}
+	return insertAll()
 } 

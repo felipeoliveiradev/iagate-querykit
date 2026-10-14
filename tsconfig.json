@@ -6,13 +6,21 @@
     "declarationMap": true,
     "composite": false,
     "emitDeclarationOnly": false,
-    "module": "ESNext",
+    "module": "NodeNext",
     "target": "ES2022",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
     "skipLibCheck": true,
-    "lib": ["es2022"],
-    "types": ["node"]
+    "isolatedModules": true,
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "src/__tests__/**"]
-} 
+}

@@ -1,6 +1,9 @@
-export type DatabaseType = 'sqlite' | 'mysql' | 'postgresql' | 'mongodb' | 'redis' | 'firebase' | 'cassandra' | 'hbase' | 'couchbase' | 'hadoop' | 'spark';
+import type { DatabaseExecutor, QueryResult, SqlDialect } from '../types.js';
+import { normalizeDialect } from '../sql/dialect.js';
 
-export type QueryResult = { data: any[]; affectedRows?: number; lastInsertId?: number | string; metadata?: Record<string, any> };
+export type DatabaseType = SqlDialect | 'postgresql';
+
+export type { QueryResult };
 
 export interface DatabaseConfig {
   name: string;
@@ -14,15 +17,39 @@ export interface DatabaseConfig {
   options?: Record<string, any>;
 }
 
-export abstract class BaseDatabaseAdapter {
+export abstract class BaseDatabaseAdapter implements DatabaseExecutor {
   protected config: DatabaseConfig;
-  constructor(config: DatabaseConfig) { this.config = config; }
-  getConfig(): DatabaseConfig { return this.config; }
+  public readonly dialect: SqlDialect;
+
+  constructor(config: DatabaseConfig) {
+    this.config = config;
+    this.dialect = normalizeDialect(config.type);
+  }
+
+  getConfig(): DatabaseConfig {
+    return this.config;
+  }
+
   abstract connect(): Promise<void>;
   abstract disconnect(): Promise<void>;
   abstract isConnectedToDatabase(): boolean;
   abstract executeQuery(sql: string, params?: any[]): Promise<QueryResult>;
-  async backup(destPath: string): Promise<void> { return; }
-  async restore(srcPath: string): Promise<void> { return; }
-  async getConnectionInfo(): Promise<{ uptime: number; activeConnections: number }> { return { uptime: 0, activeConnections: 0 }; }
-} 
+
+  async close(): Promise<void> {
+    await this.disconnect();
+  }
+
+  async backup(_destPath: string): Promise<void> {
+    return;
+  }
+  async restore(_srcPath: string): Promise<void> {
+    return;
+  }
+  async getConnectionInfo(): Promise<{ uptime: number; activeConnections: number }> {
+    return { uptime: 0, activeConnections: 0 };
+  }
+}
+
+export function isDatabaseExecutor(value: unknown): value is DatabaseExecutor {
+  return !!value && typeof (value as any).executeQuery === 'function';
+}

@@ -11,8 +11,8 @@ class ExecR {
     posts_tags: [{ posts_id: 10, tags_id: 100 }],
   }
   async executeQuery(sql: string, bindings: any[]) {
-    const m = /FROM\s+(\w+)/i.exec(sql)
-    const tbl = m?.[1]?.replace(/[`"']/g,'') as keyof ExecR['data']
+    const m = /FROM\s+["`[]?(\w+)/i.exec(sql)
+    const tbl = m?.[1] as keyof ExecR['data']
     if (/INSERT INTO/i.test(sql)) return { data: [], affectedRows: 1, lastInsertId: 99 }
     if (tbl && this.data[tbl]) return { data: this.data[tbl] }
     return { data: [] }
@@ -23,7 +23,7 @@ class ExecR {
 
 // mock registry for relations resolver import
 vi.stubGlobal('process', { env: { QK_RELATIONS_PATH: '' } })
-vi.mock('../relations-resolver', async (orig) => {
+vi.mock('../relations-resolver.js', async (orig) => {
   const mod = await orig() as any
   const attachRelations = async (table: string, rows: any[], selector?: (rel:(n:string,s?:string[])=>void)=>void) => {
     // minimal fake: attach static relationships for validation without hitting DB

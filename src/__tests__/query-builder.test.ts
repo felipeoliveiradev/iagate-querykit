@@ -19,8 +19,8 @@ describe('QueryBuilder', () => {
   it('builds simple select with where and order', () => {
     const qb = new QueryBuilder('users').select(['id','name']).where('role','=', 'admin').orderBy('id','DESC');
     const { sql, bindings } = qb.toSql();
-    expect(sql).toMatch(/SELECT .* FROM users/);
-    expect(sql).toMatch(/WHERE role = \?/);
+    expect(sql).toMatch(/SELECT .* FROM "users"/);
+    expect(sql).toMatch(/WHERE "role" = \?/);
     expect(bindings).toEqual(['admin']);
   });
 
@@ -31,8 +31,8 @@ describe('QueryBuilder', () => {
       .groupBy(['u.id'])
       .having('total' as any, '>', 5);
     const { sql } = qb.toSql();
-    expect(sql).toMatch(/INNER JOIN users as u ON u\.id = o\.user_id/);
-    expect(sql).toMatch(/GROUP BY u\.id/);
+    expect(sql).toMatch(/INNER JOIN "users" AS "u" ON "u"\."id" = "o"\."user_id"/);
+    expect(sql).toMatch(/GROUP BY "u"\."id"/);
     expect(sql).toMatch(/HAVING/);
   });
 
@@ -47,8 +47,8 @@ describe('QueryBuilder', () => {
   it('like helpers build expected where', () => {
     const qb = new QueryBuilder('users').whereContains('name','john').whereStartsWithCI('email','test');
     const { sql } = qb.toSql();
-    expect(sql).toMatch(/name LIKE \?/);
-    expect(sql).toMatch(/LOWER\(email\) LIKE LOWER\(\?\)/);
+    expect(sql).toMatch(/"name" LIKE \?/);
+    expect(sql).toMatch(/LOWER\("email"\) LIKE LOWER\(\?\)/);
   });
 
   it('union/unionAll composes queries', () => {
@@ -242,10 +242,10 @@ describe('QueryBuilder advanced helpers', () => {
       .whereBetween('age',[18,30])
       .whereColumn('a','=','b');
     const { sql } = qb.toSql();
-    expect(sql).toMatch(/id NOT IN \(/);
-    expect(sql).toMatch(/deleted_at IS NULL/);
-    expect(sql).toMatch(/age BETWEEN \? AND \?/);
-    expect(sql).toMatch(/a = b/);
+    expect(sql).toMatch(/"id" NOT IN \(/);
+    expect(sql).toMatch(/"deleted_at" IS NULL/);
+    expect(sql).toMatch(/"age" BETWEEN \? AND \?/);
+    expect(sql).toMatch(/"a" = "b"/);
   });
 
   it('exists subquery', () => {
@@ -258,8 +258,8 @@ describe('QueryBuilder advanced helpers', () => {
   it('orderByMany and groupByOne', () => {
     const qb = new QueryBuilder('items').groupByOne('type').orderByMany([{column:'a'},{column:'b',direction:'DESC'}]);
     const { sql } = qb.toSql();
-    expect(sql).toMatch(/GROUP BY type/);
-    expect(sql).toMatch(/ORDER BY a ASC, b DESC/);
+    expect(sql).toMatch(/GROUP BY "type"/);
+    expect(sql).toMatch(/ORDER BY "a" ASC, "b" DESC/);
   });
 });
 
@@ -384,7 +384,7 @@ describe('QueryBuilder where IN empty array branches and OR logical', () => {
   it('orWhereIn sets logical OR between clauses', () => {
     const qb = new QueryBuilder('t').where('a','=',1).orWhereIn('id',[2])
     const { sql } = qb.toSql()
-    expect(sql).toMatch(/WHERE a = \? OR id IN/)
+    expect(sql).toMatch(/WHERE "a" = \? OR "id" IN/)
   })
 
   it('period default branch when unknown key', () => {
@@ -503,16 +503,16 @@ describe('QueryBuilder new methods', () => {
       )
       const { sql } = qb.toSql()
       
-      expect(sql).toContain('CASE WHEN name LIKE ? THEN 3 ELSE 0 END')
-      expect(sql).toContain('CASE WHEN description LIKE ? THEN 1 ELSE 0 END')
+      expect(sql).toContain('CASE WHEN "name" LIKE ? THEN 3 ELSE 0 END')
+      expect(sql).toContain('CASE WHEN "description" LIKE ? THEN 1 ELSE 0 END')
     })
 
     it('uses default weight of 1 when weights not provided', () => {
       const qb = new QueryBuilder('products').whereRelevanceSearch('laptop', ['name', 'description'])
       const { sql } = qb.toSql()
       
-      expect(sql).toContain('CASE WHEN name LIKE ? THEN 1 ELSE 0 END')
-      expect(sql).toContain('CASE WHEN description LIKE ? THEN 1 ELSE 0 END')
+      expect(sql).toContain('CASE WHEN "name" LIKE ? THEN 1 ELSE 0 END')
+      expect(sql).toContain('CASE WHEN "description" LIKE ? THEN 1 ELSE 0 END')
     })
 
     it('adds relevance_score expression', () => {
@@ -526,7 +526,7 @@ describe('QueryBuilder new methods', () => {
       const qb = new QueryBuilder('products').whereRelevanceSearch('laptop', ['name', 'description'])
       const { sql } = qb.toSql()
       
-      expect(sql).toContain('name LIKE ? OR description LIKE ?')
+      expect(sql).toContain('"name" LIKE ? OR "description" LIKE ?')
     })
 
     it('sets pendingAction for relevance search', () => {
@@ -547,8 +547,8 @@ describe('QueryBuilder new methods', () => {
       const qb = new QueryBuilder('users').whereFuzzySearch('jhon', ['name', 'email'])
       const { sql } = qb.toSql()
       
-      expect(sql).toContain('name LIKE ? OR name LIKE ? OR name LIKE ?')
-      expect(sql).toContain('email LIKE ? OR email LIKE ? OR email LIKE ?')
+      expect(sql).toContain('"name" LIKE ? OR "name" LIKE ? OR "name" LIKE ?')
+      expect(sql).toContain('"email" LIKE ? OR "email" LIKE ? OR "email" LIKE ?')
     })
 
     it('adds similarity_score expression', () => {
@@ -773,8 +773,8 @@ describe('QueryBuilder new methods', () => {
       // Verifica se whereRelevanceSearch foi aplicado
       const { sql } = qb.toSql()
       expect(sql).toContain('relevance_score')
-      expect(sql).toContain('CASE WHEN name LIKE ? THEN 3 ELSE 0 END')
-      expect(sql).toContain('CASE WHEN email LIKE ? THEN 1 ELSE 0 END')
+      expect(sql).toContain('CASE WHEN "name" LIKE ? THEN 3 ELSE 0 END')
+      expect(sql).toContain('CASE WHEN "email" LIKE ? THEN 1 ELSE 0 END')
     })
   
     it('verifies whereFuzzySearch is applied correctly', () => {
@@ -883,7 +883,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('"name" LIKE ?')
       expect(sql).not.toContain('category')
       expect(sql).not.toContain('status')
     })
@@ -894,7 +894,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('"name" LIKE ?')
       expect(bindings).toContain('laptop')
     })
   
@@ -904,7 +904,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('LOWER(name) LIKE LOWER(?)')
+      expect(sql).toContain('LOWER("name") LIKE LOWER(?)')
       expect(bindings).toContain('laptop')
     })
   
@@ -914,7 +914,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('"name" LIKE ?')
       expect(bindings).toContain('%laptop%')
     })
   
@@ -924,7 +924,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('"name" LIKE ?')
       expect(bindings).toContain('lap%')
     })
   
@@ -934,7 +934,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('"name" LIKE ?')
       expect(bindings).toContain('%top')
     })
   
@@ -944,7 +944,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('category IN (?, ?)')
+      expect(sql).toContain('"category" IN (?, ?)')
       expect(bindings).toContain('electronics')
       expect(bindings).toContain('computers')
     })
@@ -955,7 +955,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('category = ?')
+      expect(sql).toContain('"category" = ?')
       expect(bindings).toContain('electronics')
     })
   
@@ -965,7 +965,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('category NOT IN (?, ?)')
+      expect(sql).toContain('"category" NOT IN (?, ?)')
       expect(bindings).toContain('electronics')
       expect(bindings).toContain('computers')
     })
@@ -976,7 +976,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('price BETWEEN ? AND ?')
+      expect(sql).toContain('"price" BETWEEN ? AND ?')
       expect(bindings).toContain(100)
       expect(bindings).toContain(500)
     })
@@ -987,7 +987,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('price = ?')
+      expect(sql).toContain('"price" = ?')
       expect(bindings).toContain(100)
     })
   
@@ -997,7 +997,7 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('"name" LIKE ?')
       expect(bindings).toContain('laptop')
     })
   
@@ -1009,9 +1009,9 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('price > ?')
-      expect(sql).toContain('rating >= ?')
-      expect(sql).toContain('stock < ?')
+      expect(sql).toContain('"price" > ?')
+      expect(sql).toContain('"rating" >= ?')
+      expect(sql).toContain('"stock" < ?')
       expect(bindings).toContain(100)
       expect(bindings).toContain(4.0)
       expect(bindings).toContain(50)
@@ -1023,8 +1023,8 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
-      expect(sql).toContain('description LIKE ?')
+      expect(sql).toContain('"name" LIKE ?')
+      expect(sql).toContain('"description" LIKE ?')
       expect(bindings).toContain('laptop')
       expect(bindings).toContain('laptop')
     })
@@ -1035,8 +1035,8 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('category = ?')
-      expect(sql).toContain('brand = ?')
+      expect(sql).toContain('"category" = ?')
+      expect(sql).toContain('"brand" = ?')
       expect(bindings).toContain('electronics')
       expect(bindings).toContain('electronics')
     })
@@ -1048,8 +1048,8 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
-      expect(sql).toContain('category = ?')
+      expect(sql).toContain('"name" LIKE ?')
+      expect(sql).toContain('"category" = ?')
       // Verifica se ambas as condições estão presentes (AND implícito)
       expect(sql).toContain('WHERE')
     })
@@ -1064,12 +1064,12 @@ describe('QueryBuilder new methods', () => {
       ])
       
       const { sql, bindings } = qb.toSql()
-      expect(sql).toContain('name LIKE ?')
-      expect(sql).toContain('description LIKE ?')
-      expect(sql).toContain('category IN (?, ?)')
-      expect(sql).toContain('price BETWEEN ? AND ?')
-      expect(sql).toContain('rating >= ?')
-      expect(sql).toContain('active = ?')
+      expect(sql).toContain('"name" LIKE ?')
+      expect(sql).toContain('"description" LIKE ?')
+      expect(sql).toContain('"category" IN (?, ?)')
+      expect(sql).toContain('"price" BETWEEN ? AND ?')
+      expect(sql).toContain('"rating" >= ?')
+      expect(sql).toContain('"active" = ?')
       
       expect(bindings).toContain('laptop')
       expect(bindings).toContain('laptop')
@@ -1092,8 +1092,71 @@ describe('QueryBuilder new methods', () => {
       
       const { sql } = qb.toSql()
       expect(sql).toContain('SELECT')
-      expect(sql).toContain('name LIKE ?')
+      expect(sql).toContain('"name" LIKE ?')
       expect(sql).toContain('ORDER BY')
       expect(sql).toContain('LIMIT ?')
     })
   })
+
+describe('QueryBuilder fixes (S7, S10, S11, D6, D7, D8, T9)', () => {
+  class Exec {
+    dialect = 'sqlite' as const
+    last: { sql: string; bindings: any[] } | null = null
+    executeQuery(sql: string, bindings: any[] = []) { this.last = { sql, bindings }; return Promise.resolve({ data: [{ id: 1 }] }) }
+    executeQuerySync(sql: string, bindings: any[] = []) { this.last = { sql, bindings }; return { data: [{ id: 1 }] } }
+    run(sql: string, bindings: any[] = []) { this.last = { sql, bindings }; return Promise.resolve({ changes: Array.isArray(bindings) ? Math.max(1, bindings.length / 2) : 1, lastInsertRowid: 1 }) }
+    runSync(sql: string, bindings: any[] = []) { this.last = { sql, bindings }; return { changes: 2, lastInsertRowid: 1 } }
+  }
+  let exec: Exec
+  beforeEach(() => { exec = new Exec(); setDefaultExecutor(exec as any) })
+
+  it('whereIf(false) does not apply', () => {
+    const { sql } = new QueryBuilder('t').whereIf(false, 'id', '=', 1).toSql()
+    expect(sql).not.toMatch(/WHERE/)
+  })
+
+  it('whereAll applies false and 0', () => {
+    const { bindings } = new QueryBuilder('t').whereAll({ active: false, n: 0 } as any).toSql()
+    expect(bindings).toEqual([false, 0])
+  })
+
+  it('exists compiles SELECT 1 on a clone and does not mutate the original', async () => {
+    const qb = new QueryBuilder('t').select(['id'])
+    await qb.exists()
+    expect(exec.last!.sql).toMatch(/^SELECT 1 FROM/)
+    const { sql } = qb.toSql()
+    expect(sql).toMatch(/SELECT "id" FROM/)
+  })
+
+  it('get/first/find do not mutate the original builder', async () => {
+    const qb = new QueryBuilder('t').select(['id'])
+    await qb.get()
+    await qb.first()
+    await qb.find(9)
+    const { sql, bindings } = qb.toSql()
+    expect(sql).not.toMatch(/LIMIT/)
+    expect(sql).not.toMatch(/"id" = \?/)
+    expect(bindings).toEqual([])
+  })
+
+  it('inserts every row of an array', async () => {
+    await new QueryBuilder('t').insert([{ a: 1 }, { a: 2 }]).make()
+    expect(exec.last!.sql).toMatch(/VALUES \(\?\), \(\?\)/)
+    expect(exec.last!.bindings).toEqual([1, 2])
+  })
+
+  it('toSql does not mutate selectColumns when using count()', () => {
+    const qb = new QueryBuilder('t').select(['id']).count()
+    const first = qb.toSql().sql
+    const second = qb.toSql().sql
+    expect(first).toBe(second)
+    expect(first).toMatch(/count\("id"\) AS "count"|count\(\*\) AS "count"/i)
+  })
+
+  it('clone copies unionParts independently', () => {
+    const a = new QueryBuilder('a').select(['id'])
+    const b = a.clone().union(new QueryBuilder('b').select(['id']))
+    expect(a.toSql().sql).not.toMatch(/UNION/)
+    expect(b.toSql().sql).toMatch(/UNION/)
+  })
+})

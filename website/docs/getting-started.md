@@ -7,9 +7,13 @@ title: Getting Started
 
 ```bash
 npm install iagate-querykit
-# executor opcional
+# optional drivers (install the ones you use)
 npm install better-sqlite3
+# npm install pg
+# npm install mysql2
 ```
+
+The package is dual ESM/CJS. `get()`, `first()`, and `find()` are async. Identifiers are quoted per dialect.
 
 ### Configuração básica
 

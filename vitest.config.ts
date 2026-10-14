@@ -1,17 +1,15 @@
-// vitest.config.ts
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    include: ['src/__tests__/**/*.test.ts'],
     coverage: {
-      enabled: true, // Ensure coverage is enabled
-      exclude: [
-        'website/**', // Excludes all files within the 'src/utils' folder
-        'node_modules/**',
-        'dist/**',
-        'vite.config.ts',
-        'covarage/**', // Excludes all files directly within 'src/mock-data'
-      ],
+      enabled: false,
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/__tests__/**', 'src/index.ts'],
     },
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

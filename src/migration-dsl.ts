@@ -1,4 +1,5 @@
-import type { MigrationContext, MigrationStep } from './migration-manager'
+import type { MigrationContext, MigrationStep } from './migration-manager.js';
+import { quoteIdent, quoteIdentList } from './sql/identifiers.js';
 
 /**
  * Tipos de colunas suportados pelo sistema de migração.
@@ -337,7 +338,8 @@ export class MigrationBuilder {
    * @returns String SQL da definição da coluna
    */
   private colDef(dialect: string | undefined, name: string, type: ColumnType, opts: ColumnOptions = {}): string {
-    const parts: string[] = [name, this.typeFor(dialect, type, opts.length, opts.precision, opts.scale)]
+    const ident = quoteIdent(name, (dialect as any) || 'sqlite');
+    const parts: string[] = [ident, this.typeFor(dialect, type, opts.length, opts.precision, opts.scale)]
     if (opts.primaryKey) parts.push('PRIMARY KEY')
     if (opts.notNull) parts.push('NOT NULL')
     if (opts.unique) parts.push('UNIQUE')
@@ -387,7 +389,7 @@ export class MigrationBuilder {
 
     if (opts.references) {
       const refCol = opts.references.column || 'id'
-      let ref = `REFERENCES ${opts.references.table} (${refCol})`
+      let ref = `REFERENCES ${quoteIdent(opts.references.table, (dialect as any) || 'sqlite')} (${quoteIdent(refCol, (dialect as any) || 'sqlite')})`
       if (opts.references.onDelete) ref += ` ON DELETE ${opts.references.onDelete}`
       if (opts.references.onUpdate) ref += ` ON UPDATE ${opts.references.onUpdate}`
       parts.push(ref)
@@ -421,7 +423,7 @@ export class MigrationBuilder {
   createTable(name: string, columns: Record<string, { type: ColumnType } & ColumnOptions>): this {
     this.steps.push(async (ctx) => {
       const cols = Object.entries(columns).map(([n, def]) => this.colDef(ctx.dialect, n, def.type, def))
-      const sql = `CREATE TABLE ${name} (${cols.join(', ')})`
+      const sql = `CREATE TABLE ${quoteIdent(name, ctx.dialect || 'sqlite')} (${cols.join(', ')})`
       await ctx.query(sql)
     })
     return this
@@ -445,7 +447,13 @@ export class MigrationBuilder {
    * ```
    */
   dropTable(name: string): this {
-    this.steps.push(async (ctx) => { await ctx.query(`DROP TABLE IF EXISTS ${name}`) })
+    this.steps.push(async (ctx) => {
+      const ident = quoteIdent(name, ctx.dialect || 'sqlite');
+      const sql = ctx.dialect === 'oracle'
+        ? `BEGIN EXECUTE IMMEDIATE 'DROP TABLE ${ident}'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;`
+        : `DROP TABLE IF EXISTS ${ident}`;
+      await ctx.query(sql);
+    })
     return this
   }
 
@@ -474,7 +482,7 @@ export class MigrationBuilder {
    */
   addColumn(table: string, column: string, def: { type: ColumnType } & ColumnOptions): this {
     this.steps.push(async (ctx) => {
-      const sql = `ALTER TABLE ${table} ADD COLUMN ${this.colDef(ctx.dialect, column, def.type, def)}`
+      const sql = `ALTER TABLE ${quoteIdent(table, ctx.dialect || 'sqlite')} ADD ${ctx.dialect === 'oracle' || ctx.dialect === 'mssql' ? '' : 'COLUMN '}${this.colDef(ctx.dialect, column, def.type, def)}`
       await ctx.query(sql)
     })
     return this
@@ -500,7 +508,7 @@ export class MigrationBuilder {
    */
   dropColumn(table: string, column: string): this {
     this.steps.push(async (ctx) => {
-      await ctx.query(`ALTER TABLE ${table} DROP COLUMN ${column}`)
+      await ctx.query(`ALTER TABLE ${quoteIdent(table, ctx.dialect || 'sqlite')} DROP COLUMN ${quoteIdent(column, ctx.dialect || 'sqlite')}`)
     })
     return this
   }
@@ -526,7 +534,7 @@ export class MigrationBuilder {
    */
   renameColumn(table: string, from: string, to: string): this {
     this.steps.push(async (ctx) => {
-      await ctx.query(`ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to}`)
+      await ctx.query(`ALTER TABLE ${quoteIdent(table, ctx.dialect || 'sqlite')} RENAME COLUMN ${quoteIdent(from, ctx.dialect || 'sqlite')} TO ${quoteIdent(to, ctx.dialect || 'sqlite')}`)
     })
     return this
   }
@@ -553,9 +561,11 @@ export class MigrationBuilder {
    */
   createIndex(table: string, columns: string[], opts: { unique?: boolean; name?: string } = {}): this {
     this.steps.push(async (ctx) => {
+      const d = ctx.dialect || 'sqlite'
       const name = opts.name || `${table}_${columns.join('_')}_idx`
       const uniq = opts.unique ? 'UNIQUE ' : ''
-      const sql = `CREATE ${uniq}INDEX IF NOT EXISTS ${name} ON ${table} (${columns.join(', ')})`
+      const ifNot = d === 'mssql' || d === 'oracle' ? '' : 'IF NOT EXISTS '
+      const sql = `CREATE ${uniq}INDEX ${ifNot}${quoteIdent(name, d)} ON ${quoteIdent(table, d)} (${quoteIdentList(columns, d)})`
       await ctx.query(sql)
     })
     return this
@@ -579,7 +589,13 @@ export class MigrationBuilder {
    * ```
    */
   dropIndex(name: string): this {
-    this.steps.push(async (ctx) => { await ctx.query(`DROP INDEX IF EXISTS ${name}`) })
+    this.steps.push(async (ctx) => {
+      const d = ctx.dialect || 'sqlite'
+      const sql = d === 'oracle'
+        ? `BEGIN EXECUTE IMMEDIATE 'DROP INDEX ${quoteIdent(name, d)}'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1418 THEN RAISE; END IF; END;`
+        : `DROP INDEX ${d === 'mssql' ? '' : 'IF EXISTS '}${quoteIdent(name, d)}`;
+      await ctx.query(sql);
+    })
     return this
   }
 
@@ -616,11 +632,12 @@ export class MigrationBuilder {
         this.colDef(ctx.dialect, leftCol, ColumnType.Int, { notNull: true, references: { table: leftTable, onDelete: on } }),
         this.colDef(ctx.dialect, rightCol, ColumnType.Int, { notNull: true, references: { table: rightTable, onDelete: on } }),
       ]
-      const sql = `CREATE TABLE ${name} (${cols.join(', ')})`
+      const d = ctx.dialect || 'sqlite'
+      const sql = `CREATE TABLE ${quoteIdent(name, d)} (${cols.join(', ')})`
       await ctx.query(sql)
-      // composite unique to avoid duplicates
       const idxName = `${name}_${leftCol}_${rightCol}_uniq`
-      await ctx.query(`CREATE UNIQUE INDEX IF NOT EXISTS ${idxName} ON ${name} (${leftCol}, ${rightCol})`)
+      const ifNot = d === 'mssql' || d === 'oracle' ? '' : 'IF NOT EXISTS '
+      await ctx.query(`CREATE UNIQUE INDEX ${ifNot}${quoteIdent(idxName, d)} ON ${quoteIdent(name, d)} (${quoteIdent(leftCol, d)}, ${quoteIdent(rightCol, d)})`)
     })
     return this
   }

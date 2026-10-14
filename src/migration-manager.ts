@@ -1,6 +1,7 @@
-import type { DatabaseExecutor } from './types'
-import { QueryKitConfig } from './config'
-import { QueryBuilder } from './query-builder'
+import type { DatabaseExecutor } from './types.js'
+import { QueryKitConfig } from './config.js'
+import { QueryBuilder } from './query-builder.js'
+import { quoteIdent } from './sql/identifiers.js'
 
 /**
  * Passo de migração que pode ser string SQL, array de strings ou função.
