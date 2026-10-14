@@ -40,4 +40,22 @@ describe('dialect paging (D1)', () => {
     expect(sql).toMatch(/ORDER BY \(SELECT NULL\)/);
     expect(sql).toMatch(/FETCH NEXT \? ROWS ONLY/);
   });
+
+  it('emits a dummy LIMIT when sqlite/mysql offset has no limit', () => {
+    setDefaultExecutor(exec('sqlite') as any);
+    const sqlite = new QueryBuilder('users').offset(5).toSql();
+    expect(sqlite.sql).toMatch(/LIMIT -1 OFFSET \?/);
+    expect(sqlite.bindings).toEqual([5]);
+
+    setDefaultExecutor(exec('mysql') as any);
+    const mysql = new QueryBuilder('users').offset(5).toSql();
+    expect(mysql.sql).toMatch(/LIMIT 18446744073709551615 OFFSET \?/);
+    expect(mysql.bindings).toEqual([5]);
+
+    setDefaultExecutor(exec('postgres') as any);
+    const pg = new QueryBuilder('users').offset(5).toSql();
+    expect(pg.sql).toMatch(/OFFSET \?/);
+    expect(pg.sql).not.toMatch(/LIMIT/);
+    expect(pg.bindings).toEqual([5]);
+  });
 });

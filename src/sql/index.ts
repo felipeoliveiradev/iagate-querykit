@@ -23,6 +23,9 @@ export {
   countPlaceholders,
 } from './placeholders.js';
 export { escapeSqlLiteral, inlineBindings } from './literals.js';
+export { normalizeBinding, normalizeBindings } from './bindings.js';
+export { isSqlExpression } from './identifiers.js';
+export { combineWhere } from './compile.js';
 export {
   compileSelect,
   compileWhere,

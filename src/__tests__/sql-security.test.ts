@@ -53,10 +53,10 @@ describe('SQL security', () => {
     expect(bindings).toEqual([3]);
   });
 
-  it('binds whereJsonContains (S4) with sqlite concatenation', () => {
+  it('binds whereJsonContains (S4) with sqlite json_extract', () => {
     const { sql, bindings } = new QueryBuilder('users').whereJsonContains('meta', { a: 1 }).toSql();
-    expect(sql).toMatch(/"meta" LIKE '%' \|\| \? \|\| '%'/);
-    expect(bindings).toEqual([JSON.stringify({ a: 1 })]);
+    expect(sql).toMatch(/json_extract\("meta", \?\) = \?/);
+    expect(bindings).toEqual(['$.a', 1]);
   });
 
   it('where(column, value) is equality', () => {

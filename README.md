@@ -162,8 +162,13 @@ const rows = await new QueryBuilder('users')
   .whereIn('id', [1, 2, 3])
   .whereNull('deleted_at')
   .whereBetween('created_at', ['2025-01-01', '2025-12-31'])
+  .selectRaw("strftime('%Y-%m', created_at) AS ym")
+  .all()
+
+const monthly = await new QueryBuilder('users')
+  .selectRaw("strftime('%Y-%m', created_at) AS ym")
+  .groupBy("strftime('%Y-%m', created_at)")
   .havingRaw('COUNT(id) > 0')
-  .selectRaw('strftime("%Y-%m", created_at) AS ym')
   .all()
 
 // EXISTS
@@ -177,7 +182,7 @@ const exists = await new QueryBuilder('users').whereExists(sub).limit(1).exists(
 import { ViewManager, QueryBuilder } from 'iagate-querykit'
 
 const views = new ViewManager()
-views.createOrReplaceView(
+await views.createOrReplaceView(
   'active_users',
   new QueryBuilder('users').select(['id', 'email']).where('active', '=', 1),
 )
@@ -197,13 +202,11 @@ import { TriggerManager } from 'iagate-querykit'
 
 const triggers = new TriggerManager()
 triggers.createTrigger(
-  'users_update_timestamp',
+  'users_ai',
   'users',
-  'BEFORE',
-  'UPDATE',
-  `
-    SET NEW.updated_at = CURRENT_TIMESTAMP;
-  `,
+  'AFTER',
+  'INSERT',
+  `INSERT INTO audit (msg) VALUES ('ins')`,
 )
 ```
 
@@ -425,7 +428,7 @@ const q = new QueryBuilder('events')
   .select(['user_id'])
   .whereRaw('timestamp >= datetime("now", "-1 day")')
 
-views.createOrReplaceView('active_last_day', q)
+await views.createOrReplaceView('active_last_day', q)
 views.scheduleViewRefresh('active_last_day', q, 15 * 60 * 1000)
 
 // Expected: a SQLite view named active_last_day exists and will refresh every 15m
@@ -438,11 +441,11 @@ import { TriggerManager } from 'iagate-querykit'
 
 const triggers = new TriggerManager()
 triggers.createTrigger(
-  'orders_set_updated_at',
+  'orders_ai',
   'orders',
-  'BEFORE',
-  'UPDATE',
-  `SET NEW.updated_at = CURRENT_TIMESTAMP;`
+  'AFTER',
+  'INSERT',
+  `INSERT INTO audit (msg) VALUES ('order')`
 )
 
 // Expected: a trigger exists in sqlite_master for 'orders_set_updated_at'

@@ -7,7 +7,7 @@ title: Views
 
 ```ts
 // Métodos
-createOrReplaceView(viewName: string, query: QueryBuilder<any>): void
+createOrReplaceView(viewName: string, query: QueryBuilder<any>): Promise<void>
 scheduleViewRefresh(viewName: string, query: QueryBuilder<any>, intervalMs: number): void
 unscheduleViewRefresh(viewName: string): void
 dropView(viewName: string): void
@@ -25,7 +25,7 @@ const q = new QueryBuilder('users')
   .select(['id', 'email'])
   .where('active', '=', 1)
 
-views.createOrReplaceView('active_users', q)
+await views.createOrReplaceView('active_users', q)
 views.scheduleViewRefresh('active_users', q, 10 * 60 * 1000)
 ```
 

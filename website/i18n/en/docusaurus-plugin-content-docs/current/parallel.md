@@ -8,7 +8,7 @@ title: Parallel
 parallel(...queries: QueryBuilder<any>[]): Promise<any[]>
 ```
 
-Rule: if `toSql()` starts with `SELECT`, it uses `.all()`. Otherwise, `.run()`.
+Rule: pending writes (`hasPendingWrite()`) use `.make()`. Everything else uses `.all()`.
 
 Example (reads + writes):
 ```ts

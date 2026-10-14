@@ -230,8 +230,8 @@ describe('QueryBuilder advanced helpers', () => {
   it('selectExpression and aggregates', () => {
     const qb = new QueryBuilder('logs').selectCount('*','cnt').selectSum('value');
     const { sql } = qb.toSql();
-    expect(sql).toMatch(/COUNT\(\*\) AS cnt/);
-    expect(sql).toMatch(/SUM\(value\) AS sum/);
+    expect(sql).toMatch(/COUNT\(\*\) AS "cnt"/);
+    expect(sql).toMatch(/SUM\("value"\) AS "sum"/);
   });
 
   it('period and range', () => {
@@ -389,7 +389,7 @@ describe('QueryBuilder where IN empty array branches and OR logical', () => {
   it('orWhereIn sets logical OR between clauses', () => {
     const qb = new QueryBuilder('t').where('a','=',1).orWhereIn('id',[2])
     const { sql } = qb.toSql()
-    expect(sql).toMatch(/WHERE "a" = \? OR "id" IN/)
+    expect(sql).toMatch(/WHERE \("a" = \?\) OR \("id" IN/)
   })
 
   it('period default branch when unknown key', () => {
@@ -440,8 +440,8 @@ describe('QueryBuilder new methods', () => {
       expect(qb['selectColumns'].length).toBeGreaterThan(0)
       expect(qb['selectColumns']).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ sql: 'COUNT(*) AS total_records' }),
-          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NOT NULL THEN 1 END) AS records_with_id' })
+          expect.objectContaining({ sql: 'COUNT(*) AS "total_records"' }),
+          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NOT NULL THEN 1 END) AS "records_with_id"' })
         ])
       )
     })
@@ -483,9 +483,9 @@ describe('QueryBuilder new methods', () => {
       expect(qb['selectColumns'].length).toBeGreaterThan(0)
       expect(qb['selectColumns']).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ sql: 'COUNT(*) AS total_records' }),
-          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NOT NULL THEN 1 END) AS records_with_id' }),
-          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NULL THEN 1 END) AS null_id_count' })
+          expect.objectContaining({ sql: 'COUNT(*) AS "total_records"' }),
+          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NOT NULL THEN 1 END) AS "records_with_id"' }),
+          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NULL THEN 1 END) AS "null_id_count"' })
         ])
       )
     })
@@ -757,9 +757,9 @@ describe('QueryBuilder new methods', () => {
       expect(qb['selectColumns'].length).toBeGreaterThan(0)
       expect(qb['selectColumns']).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ sql: 'COUNT(*) AS total_records' }),
-          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NOT NULL THEN 1 END) AS records_with_id' }),
-          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NULL THEN 1 END) AS null_id_count' })
+          expect.objectContaining({ sql: 'COUNT(*) AS "total_records"' }),
+          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NOT NULL THEN 1 END) AS "records_with_id"' }),
+          expect.objectContaining({ sql: 'COUNT(CASE WHEN id IS NULL THEN 1 END) AS "null_id_count"' })
         ])
       )
     })

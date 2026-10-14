@@ -1,6 +1,7 @@
 import type { SqlDialect } from './dialect.js';
 import { applyPaging } from './dialect.js';
 import { quoteIdent, quoteSelectItem, quoteTableRef } from './identifiers.js';
+import { normalizeBinding } from './bindings.js';
 
 export type CompileWhereType = 'basic' | 'raw' | 'column' | 'in' | 'null' | 'between' | 'exists';
 
@@ -69,21 +70,21 @@ export function compileWhere(
       let conditionStr: string;
       switch (clause.type) {
         case 'basic':
-          params.push(clause.value);
+          params.push(normalizeBinding(clause.value));
           conditionStr = `${quoteIdent(String(clause.column), dialect)} ${clause.operator} ?`;
           break;
         case 'column':
           conditionStr = `${quoteIdent(String(clause.column), dialect)} ${clause.operator} ${quoteIdent(String(clause.value), dialect)}`;
           break;
         case 'raw':
-          params.push(...formatRawBindings(clause.value));
+          params.push(...formatRawBindings(clause.value).map(normalizeBinding));
           conditionStr = clause.sql!;
           break;
         case 'in':
           if (!Array.isArray(clause.value) || clause.value.length === 0) {
             conditionStr = clause.not ? '1=1' : '1=0';
           } else {
-            params.push(...clause.value);
+            params.push(...clause.value.map(normalizeBinding));
             const placeholders = clause.value.map(() => '?').join(', ');
             conditionStr = `${quoteIdent(String(clause.column), dialect)} ${clause.not ? 'NOT IN' : 'IN'} (${placeholders})`;
             break;
@@ -92,10 +93,15 @@ export function compileWhere(
         case 'null':
           conditionStr = `${quoteIdent(String(clause.column), dialect)} IS ${clause.not ? 'NOT ' : ''}NULL`;
           break;
-        case 'between':
-          params.push(...(clause.value as unknown[]));
+        case 'between': {
+          const pair = clause.value;
+          if (!Array.isArray(pair) || pair.length !== 2) {
+            throw new Error('BETWEEN requires a [min, max] tuple');
+          }
+          params.push(...pair.map(normalizeBinding));
           conditionStr = `${quoteIdent(String(clause.column), dialect)} ${clause.not ? 'NOT BETWEEN' : 'BETWEEN'} ? AND ?`;
           break;
+        }
         case 'exists': {
           const { sql, bindings } = clause.query!.toSql();
           params.push(...bindings);
@@ -110,6 +116,11 @@ export function compileWhere(
     })
     .join(' ')
     .trim();
+}
+
+export function combineWhere(andPart: string, orPart: string): string {
+  if (andPart && orPart) return `(${andPart}) OR (${orPart})`;
+  return andPart || orPart;
 }
 
 export function compileSelect(state: CompileState, dialect: SqlDialect): { sql: string; bindings: unknown[] } {
@@ -133,16 +144,10 @@ export function compileSelect(state: CompileState, dialect: SqlDialect): { sql: 
   }
   const whereClause = compileWhere(state.whereClauses, dialect, params, 'AND');
   const orWhereClause = compileWhere(state.orWhereClauses, dialect, params, 'OR');
-  if (whereClause || orWhereClause) {
-    sql += ' WHERE';
-    if (whereClause) sql += ` ${whereClause}`;
-    if (orWhereClause) {
-      if (whereClause) sql += ' OR';
-      sql += ` ${orWhereClause}`;
-    }
-  }
+  const combined = combineWhere(whereClause, orWhereClause);
+  if (combined) sql += ` WHERE ${combined}`;
   if (state.groupByColumns.length > 0) {
-    sql += ` GROUP BY ${state.groupByColumns.map((c) => quoteIdent(c, dialect)).join(', ')}`;
+    sql += ` GROUP BY ${state.groupByColumns.map((c) => quoteSelectItem(c, dialect)).join(', ')}`;
   }
   if (state.havingClauses.length > 0) {
     const havingClause = compileWhere(state.havingClauses, dialect, params, 'AND');
@@ -150,7 +155,7 @@ export function compileSelect(state: CompileState, dialect: SqlDialect): { sql: 
   }
   if (state.unionParts.length === 0) {
     if (state.orderClauses.length > 0) {
-      sql += ` ORDER BY ${state.orderClauses.map((o) => `${quoteIdent(o.column, dialect)} ${o.direction}`).join(', ')}`;
+      sql += ` ORDER BY ${state.orderClauses.map((o) => `${quoteSelectItem(o.column, dialect)} ${o.direction}`).join(', ')}`;
     }
     sql = applyPaging(sql, dialect, state.limitValue, state.offsetValue, params);
     return { sql, bindings: params };
@@ -161,7 +166,7 @@ export function compileSelect(state: CompileState, dialect: SqlDialect): { sql: 
     params.push(...subBindings);
   }
   if (state.orderClauses.length > 0) {
-    sql += ` ORDER BY ${state.orderClauses.map((o) => `${quoteIdent(o.column, dialect)} ${o.direction}`).join(', ')}`;
+    sql += ` ORDER BY ${state.orderClauses.map((o) => `${quoteSelectItem(o.column, dialect)} ${o.direction}`).join(', ')}`;
   }
   sql = applyPaging(sql, dialect, state.limitValue, state.offsetValue, params);
   return { sql, bindings: params };

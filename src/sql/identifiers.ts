@@ -1,6 +1,6 @@
 import type { SqlDialect } from './dialect.js';
 
-const IDENT_PART = /^(?:[A-Za-z_][A-Za-z0-9_]*|\*)$/;
+const IDENT_PART = /^(?:[\p{L}_][\p{L}\p{N}_]*|\*)$/u;
 
 export class UnsafeIdentifierError extends Error {
   constructor(message: string) {
@@ -41,7 +41,7 @@ export function quoteIdent(name: string, dialect: SqlDialect = 'sqlite'): string
   return parts.map((p) => wrapIdent(p, dialect)).join('.');
 }
 
-const AS_RE = /^(.+?)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)$/i;
+const AS_RE = /^(.+?)\s+as\s+([\p{L}_][\p{L}\p{N}_]*)$/iu;
 
 /**
  * Quote a table reference, including optional alias:
@@ -61,7 +61,7 @@ export function quoteTableRef(ref: string, dialect: SqlDialect = 'sqlite'): stri
   return quoteIdent(trimmed, dialect);
 }
 
-function looksLikeExpression(sql: string): boolean {
+export function isSqlExpression(sql: string): boolean {
   return /[(),+\-/*]|case\s|when\s|cast\s|::/i.test(sql);
 }
 
@@ -71,13 +71,14 @@ function looksLikeExpression(sql: string): boolean {
  */
 export function quoteSelectItem(item: string, dialect: SqlDialect = 'sqlite'): string {
   const trimmed = String(item || '').trim();
-  if (trimmed === '*' || trimmed === '') return trimmed || '*';
-  if (looksLikeExpression(trimmed)) return trimmed;
+  if (trimmed === '') throw new UnsafeIdentifierError('Identifier cannot be empty');
+  if (trimmed === '*') return '*';
+  if (isSqlExpression(trimmed)) return trimmed;
   const asMatch = trimmed.match(AS_RE);
   if (asMatch) {
     const left = asMatch[1]!.trim();
     const alias = asMatch[2]!.trim();
-    if (looksLikeExpression(left)) return `${left} AS ${quoteIdent(alias, dialect)}`;
+    if (isSqlExpression(left)) return `${left} AS ${quoteIdent(alias, dialect)}`;
     return `${quoteIdent(left, dialect)} AS ${quoteIdent(alias, dialect)}`;
   }
   return quoteIdent(trimmed, dialect);

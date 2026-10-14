@@ -62,3 +62,23 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - `pluck` / `pluckSync` clone first; `scalar()` is async; `run()` refuses pending writes.
 - `BaseDatabaseAdapter.backup/restore/getConnectionInfo` throw instead of silently succeeding.
 - See `STUDY.md` for architecture, coverage (78.77% lines), and measured benchmarks.
+
+### Adversarial hardening (same 1.0.0, unpublished)
+
+- `where(col, null)` compiles to `IS NULL`; `undefined` bindings are rejected.
+- `whereNotIn` / `orWhereNotIn` require an array (non-array no longer compiles to `1=1`).
+- `orWhereIn` / `orWhereNotIn` go through `orWhereClauses` so AND/OR groups are parenthesized.
+- `Model.save()` treats `id === 0` as an existing row (UPDATE, not INSERT).
+- `increment` / `decrement` reject `NaN` / non-finite amounts.
+- `select([])` throws; `orderBy` requires a column and only `ASC`/`DESC`.
+- SQLite/MySQL `OFFSET` without `LIMIT` emits a dummy unlimited `LIMIT` so the SQL is valid.
+- `all` / `allSync` / `exists` throw if a write is pending (no more silent `insert().all()`).
+- `exists()` clears leftover aggregates on the clone.
+- `limit` / `offset` require non-negative integers.
+- Bindings: Date → ISO, plain / null-prototype objects → JSON; custom class instances, functions, and symbols are rejected.
+- `whereJsonContains` on SQLite uses `json_extract` / `json_each` (not `LIKE` substring). Oracle/MSSQL no longer ignore the search value.
+- `whereFindInSet` / `whereArrayContains` quote identifiers and match CSV tokens (not substrings).
+- `whereIf` accepts the 2-arg equality form; `whereBetween` / `having` reject bad tuples / `undefined`.
+- Unicode identifiers (`\p{L}\p{N}`) are allowed when quoted.
+- Live Postgres 16 + MySQL 8 integration tests run in CI and on a local VM (reserved words, empty IN, null, JSON, pagination, concurrent reads, rollback, upsert, FIND_IN_SET).
+- Property tests (`fast-check`) and every README/docs example run as Vitest cases.

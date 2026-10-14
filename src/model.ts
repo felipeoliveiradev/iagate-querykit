@@ -227,11 +227,21 @@ export class Model {
    * // Output: Usuário atualizado no banco
    * ```
    */
+  private dataAttributes(): Record<string, any> {
+    const skip = new Set(['fillable', 'guarded', 'banks', 'tableName']);
+    const raw: Record<string, any> = {};
+    for (const [key, value] of Object.entries(this as Record<string, unknown>)) {
+      if (skip.has(key) || typeof value === 'function' || value === undefined) continue;
+      raw[key] = value;
+    }
+    return this.getFillableAttributes(raw);
+  }
+
   async save(): Promise<any> {
     const queryBase = (this.constructor as typeof Model & { new(): any }).query<this>();
     const query = this.applyBanks(queryBase);
-    const attributes = this.getFillableAttributes(this as any);
-    if ((this as any).id) {
+    const attributes = this.dataAttributes();
+    if ((this as any).id != null) {
       return query.where('id', '=', (this as any).id).update(attributes as Partial<this>).make();
     }
     const result = await query.insert(attributes as Partial<this>).make();

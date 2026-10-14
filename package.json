@@ -390,6 +390,7 @@
     "@types/node": "^22.17.1",
     "@vitest/coverage-v8": "^2.1.9",
     "better-sqlite3": "^11.10.0",
+    "fast-check": "^4.10.2",
     "mysql2": "^3.14.1",
     "pg": "^8.16.0",
     "react": "^18.3.1",

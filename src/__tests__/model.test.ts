@@ -43,6 +43,17 @@ describe('Model.save', () => {
     expect(last.sql).not.toContain('created_at');
   });
 
+  it('updates when id is 0 (not treated as missing)', async () => {
+    const u = new User() as any;
+    u.id = 0;
+    u.fill({ name: 'Zero' });
+    await u.save();
+    const last = exec.runs.at(-1)!;
+    expect(last.sql).toMatch(/UPDATE "users" SET/);
+    expect(last.sql).toMatch(/WHERE "id" = \?/);
+    expect(last.bindings.at(-1)).toBe(0);
+  });
+
   it('delete() removes by id', async () => {
     const u = new User() as any; u.id = 7;
     await u.delete();

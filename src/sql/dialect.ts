@@ -60,6 +60,12 @@ export function applyPaging(
   if (hasLimit) {
     sql += ' LIMIT ?';
     bindings.push(limit);
+  } else if (hasOffset && dialect === 'sqlite') {
+    // SQLite rejects OFFSET without LIMIT. LIMIT -1 means "no cap".
+    sql += ' LIMIT -1';
+  } else if (hasOffset && dialect === 'mysql') {
+    // MySQL rejects OFFSET without LIMIT. Max unsigned bigint is the documented workaround.
+    sql += ' LIMIT 18446744073709551615';
   }
   if (hasOffset) {
     sql += ' OFFSET ?';

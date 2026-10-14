@@ -408,6 +408,58 @@ Não publicamos no npm.
 
 ---
 
+## 11. Rodada adversarial (esta revisão)
+
+Pedido do owner: estudar tudo, ser adversário, escrever testes de propriedade/fuzz, executar todo exemplo de README/docs, cobrir cada método público com bordas, e fazer Postgres/MySQL rodarem de verdade. Cada bug encontrado foi corrigido com teste de regressão.
+
+### Bugs encontrados e corrigidos nesta rodada
+
+| # | Severidade | Bug | Correção |
+| ---: | --- | --- | --- |
+| 1 | P0 | `where(col, null)` emitia `= ?` com `NULL` (nunca casa em SQL) | `IS NULL` / `IS NOT NULL` |
+| 2 | P0 | `undefined` ia para o driver e quebrava / virava NULL silencioso | `normalizeBinding` rejeita `undefined` |
+| 3 | P0 | `whereNotIn(undefined\|null\|não-array)` compilava `1=1` (vaza linhas) | exige array; `[]` continua `1=1` |
+| 4 | P0 | `orWhereIn` ia para `whereClauses` com `OR` solto → precedência AND > OR | `orWhereClauses` + `combineWhere` com parênteses |
+| 5 | P0 | `Model.save()` tratava `id === 0` como “sem id” → INSERT duplicado | `id != null` |
+| 6 | P0 | `increment`/`decrement(NaN)` zerava a coluna no SQLite | `Number.isFinite` |
+| 7 | P0 | `havingIf(false)` aplicava o HAVING | só aplica se truthy |
+| 8 | P0 | `orWhere(col, value)` de 2 args não era igualdade | overload de 2 args |
+| 9 | P0 | UPDATE/DELETE ignoravam `orWhere` sozinho | `writeWhere` usa AND + OR |
+| 10 | P0 | `updateOrInsert` não restaurava `where` se a transação falhasse | `finally` restaura cláusulas |
+| 11 | P1 | `select([])` → `SELECT  FROM t` | throw |
+| 12 | P1 | SQLite/MySQL `OFFSET` sem `LIMIT` → erro de sintaxe | `LIMIT -1` / `LIMIT 18446744073709551615` |
+| 13 | P1 | `insert().all()` compilava SELECT e **não** inseria | `all`/`allSync`/`exists` recusam write pendente |
+| 14 | P1 | `orderBy('id', 'DESC;drop')` interpolava a direção | só `ASC`/`DESC` |
+| 15 | P1 | `orderBy('')` virava `ORDER BY *` | coluna vazia rejeitada |
+| 16 | P1 | `exists()` depois de `count()` mantinha `COUNT(*)` | clone zera `aggregates` |
+| 17 | P1 | `limit(1.5)` / `offset(NaN)` aceitos | inteiro ≥ 0 |
+| 18 | P1 | `new Foo()` / `Object.create(null)` : instâncias quebravam no driver; null-proto era rejeitado | proto `Object`/`null` → JSON; resto throw |
+| 19 | P1 | `groupBy`/`orderBy`/aliases/`selectCount` sem quote | `quoteSelectItem` / `quoteIdent` |
+| 20 | P1 | `whereNearby` interpolava colunas e deixava `?` do SELECT sem bind | quote + `selectBindings` |
+| 21 | P1 | insert multi-row com chaves diferentes gerava SQL inválido | throw “same columns” |
+| 22 | P1 | `Model.save` gravava `fillable`/`guarded`/funções/`undefined` | `dataAttributes()` filtra |
+| 23 | P2 | `whereJsonContains` no SQLite era `LIKE '%json%'` (substring) | `json_extract` / `json_each` |
+| 24 | P2 | Oracle `whereJsonContains` ignorava o valor (`JSON_EXISTS(col, '$')`) | `JSON_EXISTS` com `PASSING` |
+| 25 | P2 | `whereFindInSet` / `whereArrayContains` no SQLite: `LIKE ?` sem `%` e coluna sem quote (`order` quebra) | CSV token + `qIdent` |
+| 26 | P2 | `whereBetween` sem tupla / `having(undefined)` só falhava no compile | validação na API |
+| 27 | P2 | `whereIf` só tinha forma de 4 args | overload de 2 args (igualdade) |
+| 28 | P3 | README: `havingRaw` sem `GROUP BY` (SQLite recusa); `strftime("%Y-%m")` (aspas duplas = ident); `createOrReplaceView` sem `await`; trigger body inválido | exemplos corrigidos e executados como testes |
+| 29 | P3 | `parallel.md` dizia que writes usam `.run()` | usam `.make()` via `hasPendingWrite()` |
+| 30 | P3 | i18n ES: mesmos erros de view/strftime | alinhado ao EN |
+
+### Testes novos
+
+- `src/__tests__/sql-fuzz.test.ts` — fast-check: idents, placeholders, IN vazio, clone, `whereNotIn` não-array, `orWhereIn` parentizado, `orderBy` direção, Date/JSON bindings.
+- `src/__tests__/readme-examples.test.ts` — cada exemplo do README/docs (kit, CRUD, raw/IN/NULL/BETWEEN/EXISTS, views+triggers, scheduler, parallel, simulation, multi-db, tx, union/paginate, aggregates, period, Model).
+- `src/__tests__/public-edges.test.ts` — todos os métodos públicos com bordas pedidas (null/undefined, IN vazio, Date/BigInt/Buffer/JSON, reserved words, unicode, whereGroup, joins+alias, subquery, upsert, paginação, tx rollback, concorrência, increment NaN, `insert().all()`, FIND_IN_SET, JSON contains).
+- Integração Postgres 16 + MySQL 8 **sempre roda** (default `127.0.0.1`; serviços instalados no VM via `pg_ctlcluster` / `mysqld` porque `policy-rc.d` bloqueia `service`).
+
+**Suite desta rodada:** 354 passou / 0 pulados. Typecheck strict passou. Postgres e MySQL live passaram.
+
+Não publicamos no npm.
+
+---
+
 ## Como reproduzir os números
 
 ```bash

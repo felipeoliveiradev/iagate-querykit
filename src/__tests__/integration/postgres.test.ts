@@ -3,8 +3,8 @@ import { setDefaultExecutor, resetQueryKitConfig } from '../../config.js';
 import { QueryBuilder } from '../../query-builder.js';
 import { PostgresExecutor } from '../../adapters/postgresql.js';
 
-const host = process.env.POSTGRES_HOST;
-const describePg = host ? describe : describe.skip;
+const host = process.env.POSTGRES_HOST || '127.0.0.1';
+const describePg = describe;
 
 describePg('postgres integration', () => {
   let exec: PostgresExecutor;
@@ -49,6 +49,45 @@ describePg('postgres integration', () => {
 
     await new QueryBuilder('qk_users').where('id', '=', row!.id).delete().make();
     expect(await new QueryBuilder('qk_users').where('id', '=', row!.id).exists()).toBe(false);
+  });
+
+  it('handles reserved words, empty IN, null, JSON, pagination, concurrent reads', async () => {
+    await exec.executeQuery('DROP TABLE IF EXISTS "order"', []);
+    await exec.executeQuery('CREATE TABLE "order" (id SERIAL PRIMARY KEY, "select" TEXT, meta JSONB, deleted_at TEXT)', []);
+    await new QueryBuilder('order').insert({ select: 'ok', meta: { a: 1 } }).make();
+    const row = await new QueryBuilder('order').where('select', '=', 'ok').first<any>();
+    expect(row.select).toBe('ok');
+    expect(await new QueryBuilder('order').whereIn('id', []).all()).toEqual([]);
+    expect(await new QueryBuilder('order').where('deleted_at', null).all()).toHaveLength(1);
+    const page = await new QueryBuilder('order').orderBy('id').paginate(1, 10).all();
+    expect(page).toHaveLength(1);
+    const concurrent = await Promise.all([
+      new QueryBuilder('order').where('id', '=', row.id).first(),
+      new QueryBuilder('order').where('id', '=', row.id).first(),
+    ]);
+    expect(concurrent[0]?.id).toBe(row.id);
+    expect(concurrent[1]?.id).toBe(row.id);
+  });
+
+  it('offset without limit, upsert, and JSON containment', async () => {
+    await exec.executeQuery('DROP TABLE IF EXISTS qk_extra', []);
+    await exec.executeQuery(
+      'CREATE TABLE qk_extra (id SERIAL PRIMARY KEY, email TEXT UNIQUE, meta JSONB)',
+      [],
+    );
+    await new QueryBuilder('qk_extra').insert({ email: 'a@pg.com', meta: { a: 1 } }).make();
+    await new QueryBuilder('qk_extra').insert({ email: 'b@pg.com', meta: { a: 2 } }).make();
+    const skipped = await new QueryBuilder('qk_extra').orderBy('id').offset(1).all<any>();
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0].email).toBe('b@pg.com');
+
+    await new QueryBuilder('qk_extra').updateOrInsert({ email: 'a@pg.com' }, { meta: { a: 9 } }).make();
+    const updated = await new QueryBuilder('qk_extra').where('email', '=', 'a@pg.com').first<any>();
+    expect(updated.meta).toEqual({ a: 9 });
+
+    const hit = await new QueryBuilder('qk_extra').whereJsonContains('meta', { a: 9 }).all<any>();
+    expect(hit).toHaveLength(1);
+    expect(hit[0].email).toBe('a@pg.com');
   });
 
   it('rolls back a transaction', async () => {

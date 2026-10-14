@@ -16,7 +16,7 @@ raw(sql):
 import { raw, QueryBuilder } from 'iagate-querykit'
 
 const q = new QueryBuilder('users')
-  .select(['id', raw('strftime("%Y-%m", created_at) as ym')])
+  .select(['id', raw("strftime('%Y-%m', created_at) as ym")])
 ```
 
 `table<T>(name)`:
