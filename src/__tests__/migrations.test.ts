@@ -191,6 +191,25 @@ describe('MigrationManager', () => {
         c_uuid: /c_uuid UNIQUEIDENTIFIER/i,
         c_bin: /c_bin VARBINARY\(MAX\)/i,
       },
+      oracle: {
+        c_int: /c_int NUMBER(?!\()/i,
+        c_bigint: /c_bigint NUMBER\(19\)/i,
+        c_float: /c_float BINARY_FLOAT/i,
+        c_double: /c_double BINARY_DOUBLE/i,
+        c_dec: /c_dec NUMBER\(12,2\)/i,
+        c_str: /c_str VARCHAR2\(100\)/i,
+        c_vc: /c_vc VARCHAR2\(100\)/i,
+        c_text: /c_text CLOB/i,
+        c_date: /c_date DATE/i,
+        c_time: /c_time VARCHAR2\(20\)/i,
+        c_dt: /c_dt TIMESTAMP(?!\sWITH)/i,
+        c_ts: /c_ts TIMESTAMP(?!\sWITH)/i,
+        c_tstz: /c_tstz TIMESTAMP WITH TIME ZONE/i,
+        c_bool: /c_bool NUMBER\(1\)/i,
+        c_json: /c_json CLOB/i,
+        c_uuid: /c_uuid VARCHAR2\(36\)/i,
+        c_bin: /c_bin BLOB/i,
+      },
     }
 
     for (const dialect of Object.keys(expectations)) {
@@ -338,5 +357,26 @@ describe('MigrationManager', () => {
     expect(sql).toMatch(/REFERENCES posts \(id\) ON DELETE CASCADE/i)
     expect(sql).toMatch(/REFERENCES tags \(id\) ON DELETE CASCADE/i)
     expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS posts_tags_posts_id_tags_id_uniq ON posts_tags \(posts_id, tags_id\)/i)
+  })
+
+  it('createIndex / dropIndex / raw / join table on oracle and mssql', async () => {
+    for (const dialect of ['oracle', 'mssql'] as const) {
+      const ex = new Exec(dialect)
+      setDefaultExecutor(ex as any)
+      await resetMigrations({ executor: ex as any })
+      const up = migration((b: MigrationBuilder) => {
+        b.createIndex('users', ['email'], { unique: true, name: 'users_email_idx' })
+          .dropIndex('users_email_idx')
+          .createJoinTable('user_roles', 'users', 'roles')
+          .raw('SELECT 1')
+      })
+      await migrateUp([{ id: `${dialect}_idx`, up }], { executor: ex as any })
+      const sql = ex.normalized()
+      expect(sql).toMatch(/CREATE UNIQUE INDEX/)
+      if (dialect === 'oracle') expect(sql).toMatch(/EXECUTE IMMEDIATE 'DROP INDEX/)
+      else expect(sql).toMatch(/DROP INDEX/)
+      expect(sql).toMatch(/CREATE TABLE user_roles/)
+      expect(sql).toMatch(/SELECT 1/)
+    }
   })
 }) 

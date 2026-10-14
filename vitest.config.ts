@@ -7,7 +7,7 @@ export default defineConfig({
       enabled: false,
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/__tests__/**', 'src/index.ts'],
+      exclude: ['src/__tests__/**', 'src/index.ts', 'src/types.ts'],
     },
     testTimeout: 30_000,
     hookTimeout: 30_000,

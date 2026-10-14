@@ -136,8 +136,8 @@ Black-box of **published 0.1.46** (see §10) confirmed P1–P3 and the identifie
 
 None of the audit items above are left open. Out of scope on purpose:
 
-- **Oracle / SQL Server live integration** — no server available in this environment and no Docker daemon. Dialect SQL is unit-tested; live integration covers SQLite always, and Postgres/MySQL when `POSTGRES_*` / `MYSQL_*` env (or CI services) are present.
-- **Full-text / geo helpers** remain best-effort dialect SQL. They now quote identifiers and bind values; they are not a substitute for a dedicated search engine.
+- **Oracle / SQL Server live integration** — no Docker daemon in this VM (`which docker` is empty), so `gvenzl/oracle-free` and `mcr.microsoft.com/mssql/server` were not started. Dialect SQL is snapshot-tested (`src/__tests__/dialect-sql-snapshots.test.ts`) and adapters are exercised with in-process pool mocks (tx commit/rollback/close). Live integration covers SQLite `:memory:` always, and throwaway Postgres 16 + MySQL 8 on `127.0.0.1` only.
+- **Full-text / geo helpers** are still best-effort dialect SQL (not a search engine). They now quote identifiers, bind values, and have live round-trips on throwaway SQLite / Postgres / MySQL. SQLite FTS is LIKE, not FTS5.
 - **Semantic triggers that emit arbitrary SQL strings** are still raw SQL by design (same as `whereRaw`).
 
 ---
@@ -174,4 +174,26 @@ These match the source audit and are addressed in 1.0.0.
 | TypeScript `moduleResolution: NodeNext` (`tsc` + emit + run) | **PASS** — `tsc ok`, `nodenext-ok nodenext@x.com` |
 | TypeScript `moduleResolution: bundler` (`tsc --noEmit`) | **PASS** — `tsc ok` |
 
-Local unit/integration: **278 passed**, 3 skipped (Postgres/MySQL — no Docker/`POSTGRES_HOST`/`MYSQL_HOST` in this environment). CI workflow starts Postgres 16 and MySQL 8 service containers so those tests run on PRs.
+Re-verified this round: same six PASS rows. Local suite: **427 passed / 0 skipped / 38 files**. Coverage **95.73% lines / 90.14% branches / 91.06% functions**. Postgres 16 + MySQL 8 live on throwaway `127.0.0.1` `qk_e_*` (0 leftovers after). CI workflow starts Postgres 16 and MySQL 8 service containers so those tests run on PRs.
+
+---
+
+## 12. Round 3 findings (relations / geo / FTS / dialects)
+
+| ID | Severity | Finding | Status | Covering test |
+| --- | --- | --- | --- | --- |
+| R3-1 | High | `attachRelations` was reached only via `import()`, so v8 attributed ~1.6% to the file and tests mocked it away. | FIXED (static import) | `src/__tests__/relations-resolver.test.ts` |
+| R3-2 | High | hasMany keyed parents in a `Map` so duplicate `localKey` values kept only the last parent. | FIXED | same |
+| R3-3 | High | Selector `select: ['id','title']` dropped the join key, so eager-load attached nothing. | FIXED (include then strip) | same |
+| R3-4 | High | `whereRelevanceSearch` put `LIKE ?` in SELECT with no `selectBindings`, stealing WHERE bindings. | FIXED | `src/__tests__/adversarial-round3.test.ts` |
+| R3-5 | High | `stats({ customColumns })` interpolated column names raw. | FIXED | same |
+| R3-6 | High | `selectRowNumber` interpolated alias/order columns; SQLite fallback SQL was invalid. | FIXED (`ROW_NUMBER() OVER` + quote) | same |
+| R3-7 | Medium | `whereRegex` read `QueryKitConfig.defaultExecutor`, left columns unquoted, ignored flags. | FIXED | same |
+| R3-8 | Medium | Regex LIKE fallback kept a plain token as exact `LIKE 'Sao'` (missed `Sao Paulo`). | FIXED | `src/__tests__/geo-fts.test.ts` |
+| R3-9 | Medium | `whereFuzzySearch` validated threshold after mutating the builder. | FIXED | `src/__tests__/adversarial-round3.test.ts` |
+| R3-10 | Medium | `whereDateRangeTz` on MSSQL ignored the timezone (fell through to BETWEEN). | FIXED | same + dialect snapshots |
+| R3-11 | Medium | `whereFullText('   ')` compiled a match-everything predicate. | FIXED | `src/__tests__/geo-fts.test.ts` |
+| R3-12 | Medium | `whereMultiSearch` ignored `operator: 'OR'`. | FIXED | `src/__tests__/adversarial-round3.test.ts` |
+| R3-13 | Medium | Extra-column `LIKE_CI` used case-sensitive `orWhere LIKE`. | FIXED (`orWhereILike`) | same |
+| R3-14 | Medium | `whereNearby` cannot run on stock SQLite (`acos`/`cos`/`sin` missing). | FIXED (register math helpers) | `src/__tests__/geo-fts.test.ts` + adapter |
+| R3-15 | Low | `whereILike` called `executor()` (throws if only `defaultDialect` is set). | FIXED (`this.dialect()`) | `src/__tests__/branch-coverage.test.ts` |

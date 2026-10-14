@@ -8,6 +8,7 @@ import { returningInsertSql } from './sql/dialect.js';
 import { quoteIdent, quoteSelectItem, quoteTableRef, isSqlExpression } from './sql/identifiers.js';
 import { compileSelect, compileWhere, combineWhere, type CompileState } from './sql/compile.js';
 import { normalizeBinding, normalizeBindings } from './sql/bindings.js';
+import { attachRelations } from './relations-resolver.js';
 
 export type QueryBuilderOptions = {
   executor?: DatabaseExecutor;
@@ -4662,7 +4663,6 @@ export class QueryBuilder<T = any> {
         const limit = this.limitValue === undefined ? results.length : this.limitValue;
         results = results.slice(offset, offset + limit);
         if (!this.includeAllRelations) return results;
-        const { attachRelations } = await import('./relations-resolver.js').catch(() => ({ attachRelations: async (x: any) => x }))
         const selector = typeof this.includeAllRelations === 'function' ? this.includeAllRelations : undefined
         return (await attachRelations(this.tableName, results as any, selector)) as any
       }
@@ -4677,7 +4677,6 @@ export class QueryBuilder<T = any> {
     let rows = res.data as U[];
     eventManager.emit(`querykit:trigger:AFTER:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'AFTER', rows, qb: qbHelper } as any);
     if (!this.includeAllRelations) return rows;
-    const { attachRelations } = await import('./relations-resolver.js').catch(() => ({ attachRelations: async (x: any) => x }))
     const selector = typeof this.includeAllRelations === 'function' ? this.includeAllRelations : undefined
     return (await attachRelations(this.tableName, rows as any, selector)) as any
   }
@@ -6739,25 +6738,20 @@ export class QueryBuilder<T = any> {
    * }
    */
   whereEndsWith(column: keyof T | string, suffix: string): this { return this.whereLike(column, `%${suffix}`); }
-  whereILike(column: keyof T | string, pattern: string): this { 
-    // Detecta o executor para usar a sintaxe correta do banco
-    const executor = this.executor();
-    let sql: string;
-    
-    const col = this.qIdent(String(column));
-    if (executor?.dialect === 'postgres') {
-      sql = `${col} ILIKE ?`;
-    } else if (executor?.dialect === 'mysql') {
-      sql = `${col} LIKE ? COLLATE utf8_general_ci`;
-    } else if (executor?.dialect === 'oracle') {
-      sql = `UPPER(${col}) LIKE UPPER(?)`;
-    } else if (executor?.dialect === 'mssql') {
-      sql = `${col} LIKE ? COLLATE SQL_Latin1_General_CP1_CI_AS`;
-    } else {
-      sql = `LOWER(${col}) LIKE LOWER(?)`;
-    }
-    
-    return this.whereRaw(sql, [pattern]); 
+  whereILike(column: keyof T | string, pattern: string): this {
+    return this.whereRaw(this.iLikeSql(String(column)), [pattern]);
+  }
+  orWhereILike(column: keyof T | string, pattern: string): this {
+    return this.whereRaw(this.iLikeSql(String(column)), [pattern], 'OR');
+  }
+  private iLikeSql(column: string): string {
+    const col = this.qIdent(column);
+    const dialect = this.dialect();
+    if (dialect === 'postgres') return `${col} ILIKE ?`;
+    if (dialect === 'mysql') return `${col} LIKE ? COLLATE utf8_general_ci`;
+    if (dialect === 'oracle') return `UPPER(${col}) LIKE UPPER(?)`;
+    if (dialect === 'mssql') return `${col} LIKE ? COLLATE SQL_Latin1_General_CP1_CI_AS`;
+    return `LOWER(${col}) LIKE LOWER(?)`;
   }
   /**
    * Adiciona uma cláusula WHERE ILIKE para buscar texto que contenha um termo (case-insensitive).
@@ -7625,45 +7619,34 @@ export class QueryBuilder<T = any> {
    */
   whereFullText(columns: (keyof T | string)[], query: string, language: string = 'english'): this {
     this.track('whereFullText', { columns, query, language });
-    
-    // Detecta o executor para usar a sintaxe correta do banco
-    const executor = this.executor();
+    if (!Array.isArray(columns) || columns.length === 0) {
+      throw new Error('whereFullText() requires at least one column');
+    }
+    if (!query || !String(query).trim()) return this;
+
+    const dialect = this.executor()?.dialect || this.dialect();
+    const cols = columns.map((c) => this.qIdent(String(c)));
     let sql: string;
     let values: any[];
-    
-    if (executor?.dialect === 'postgres') {
-      // PostgreSQL - full-text search nativo
-      const columnList = columns.map(c => String(c)).join(' || \' \' || ');
-      sql = `to_tsvector(?, ${columnList}) @@ plainto_tsquery(?)`;
-      values = [language, query];
-    } else if (executor?.dialect === 'mysql') {
-      // MySQL - MATCH AGAINST
-      const columnList = columns.map(c => String(c)).join(', ');
-      sql = `MATCH(${columnList}) AGAINST(? IN NATURAL LANGUAGE MODE)`;
+
+    if (dialect === 'postgres') {
+      sql = `to_tsvector(?::regconfig, ${cols.join(" || ' ' || ")}) @@ plainto_tsquery(?::regconfig, ?)`;
+      values = [language, language, query];
+    } else if (dialect === 'mysql') {
+      sql = `MATCH(${cols.join(', ')}) AGAINST(? IN NATURAL LANGUAGE MODE)`;
       values = [query];
-    } else if (executor?.dialect === 'oracle') {
-      // Oracle - CONTAINS
-      const columnList = columns.map(c => `CONTAINS(${String(c)}, ?) > 0`).join(' OR ');
-      sql = `(${columnList})`;
-      values = Array(columns.length).fill(query);
-    } else if (executor?.dialect === 'mssql') {
-      // SQL Server - CONTAINS
-      const columnList = columns.map(c => `CONTAINS(${String(c)}, ?)`).join(' OR ');
-      sql = `(${columnList})`;
-      values = Array(columns.length).fill(query);
+    } else if (dialect === 'oracle') {
+      sql = `(${cols.map((c) => `CONTAINS(${c}, ?) > 0`).join(' OR ')})`;
+      values = cols.map(() => query);
+    } else if (dialect === 'mssql') {
+      sql = `(${cols.map((c) => `CONTAINS(${c}, ?)`).join(' OR ')})`;
+      values = cols.map(() => query);
     } else {
-      // Fallback universal - LIKE em todas as colunas
-      const columnList = columns.map(c => `${String(c)} LIKE ?`).join(' OR ');
-      sql = `(${columnList})`;
-      values = Array(columns.length).fill(`%${query}%`);
+      sql = `(${cols.map((c) => `${c} LIKE ?`).join(' OR ')})`;
+      values = cols.map(() => `%${query}%`);
     }
-    
-    this.whereClauses.push({ 
-      type: 'raw', 
-      sql, 
-      logical: 'AND',
-      value: values
-    });
+
+    this.whereClauses.push({ type: 'raw', sql, logical: 'AND', value: values });
     return this;
   }
 
@@ -8110,31 +8093,11 @@ export class QueryBuilder<T = any> {
    */
   selectRowNumber(alias: string = 'row_number'): this {
     this.track('selectRowNumber', { alias });
-    
-    // Detecta o executor para usar a sintaxe correta do banco
-    const executor = this.executor();
-    let sql: string;
-    
-    if (executor?.dialect === 'postgres' || executor?.dialect === 'mssql' || executor?.dialect === 'oracle') {
-      // PostgreSQL, SQL Server, Oracle - ROW_NUMBER() OVER()
-      const orderBy = this.orderClauses.length > 0 
-        ? this.orderClauses.map(o => `${o.column} ${o.direction}`).join(', ') 
-        : '1';
-      sql = `ROW_NUMBER() OVER (ORDER BY ${orderBy}) as ${alias}`;
-    } else if (executor?.dialect === 'mysql') {
-      // MySQL - ROW_NUMBER() OVER() (MySQL 8.0+)
-      const orderBy = this.orderClauses.length > 0 
-        ? this.orderClauses.map(o => `${o.column} ${o.direction}`).join(', ') 
-        : '1';
-      sql = `ROW_NUMBER() OVER (ORDER BY ${orderBy}) as ${alias}`;
-    } else {
-      // Fallback universal - subquery com LIMIT
-      const orderBy = this.orderClauses.length > 0 
-        ? this.orderClauses.map(o => `${o.column} ${o.direction}`).join(', ') 
-        : '1';
-      sql = `(SELECT COUNT(*) + 1 FROM ${this.tableName} t2 WHERE t2.${orderBy.split(' ')[0]} < ${this.tableName}.${orderBy.split(' ')[0]}) as ${alias}`;
-    }
-    
+    const orderBy = this.orderClauses.length > 0
+      ? this.orderClauses.map((o) => `${this.qIdent(o.column)} ${o.direction}`).join(', ')
+      : '1';
+    // SQLite 3.25+, MySQL 8, Postgres, MSSQL, and Oracle all support window functions.
+    const sql = `ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS ${this.qIdent(alias)}`;
     this.selectColumns.push(raw(sql));
     return this;
   }
@@ -8757,11 +8720,12 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
       this.selectExpression('COUNT(DISTINCT id)', 'distinct_id_count');
     }
 
-    // Adiciona colunas customizadas se fornecidas
     if (options.customColumns) {
-      options.customColumns.forEach(col => {
-        this.selectExpression(`COUNT(CASE WHEN ${col} IS NOT NULL THEN 1 END)`, `${col}_not_null_count`);
-        this.selectExpression(`COUNT(CASE WHEN ${col} IS NULL THEN 1 END)`, `${col}_null_count`);
+      options.customColumns.forEach((col) => {
+        const ident = this.qIdent(col);
+        const aliasBase = String(col).replace(/[^\p{L}\p{N}_]/gu, '_');
+        this.selectExpression(`COUNT(CASE WHEN ${ident} IS NOT NULL THEN 1 END)`, `${aliasBase}_not_null_count`);
+        this.selectExpression(`COUNT(CASE WHEN ${ident} IS NULL THEN 1 END)`, `${aliasBase}_null_count`);
       });
     }
 
@@ -8833,7 +8797,11 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
     this.track('whereRelevanceSearch', { searchTerm, columns, weights });
 
     // Normaliza pesos se fornecidos
-    const normalizedWeights = weights.length === columns.length ? weights : columns.map(() => 1);
+    const normalizedWeights =
+      weights.length === columns.length ? weights : columns.map(() => 1);
+    if (normalizedWeights.some((w) => typeof w !== 'number' || !Number.isFinite(w))) {
+      throw new Error('whereRelevanceSearch() weights must be finite numbers');
+    }
 
     // Cria expressão de relevância
     const relevanceExpression = columns
@@ -8843,9 +8811,12 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
       })
       .join(' + ');
 
-    // Adiciona busca e score de relevância
     this.whereRawSearch(searchTerm, columns);
-    this.selectExpression(relevanceExpression, 'relevance_score');
+    this.selectExpression(
+      relevanceExpression,
+      'relevance_score',
+      columns.map(() => `%${searchTerm}%`),
+    );
 
     return this;
   }
@@ -8920,7 +8891,10 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
     threshold: number = 0.7
   ): this {
     if (!searchTerm) return this;
-  
+    if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+      throw new Error('whereFuzzySearch() threshold must be a finite number between 0 and 1');
+    }
+
     this.track('whereFuzzySearch', { searchTerm, columns, threshold });
   
     // Para compatibilidade com todos os bancos, usamos LIKE com wildcards
@@ -8936,7 +8910,6 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
   
     this.whereRaw(`(${searchConditions})`, bindings);
   
-    // Adiciona score de similaridade básico aos selectColumns
     const similarityExpression = `
       CASE 
         WHEN ${columns.map(col => `${this.qIdent(String(col))} = ?`).join(' OR ')} THEN 1.0
@@ -8947,18 +8920,17 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
       END
     `;
   
-    // Adiciona a expressão similarity_score aos selectColumns
     this.selectExpression(similarityExpression, 'similarity_score');
   
-    // Adiciona bindings para o score
     const scoreBindings = [
-      ...columns.map(() => searchTerm),                    // Exato
-      ...columns.map(() => `${searchTerm}%`),             // Começa com
-      ...columns.map(() => `%${searchTerm}`),             // Termina com
-      ...columns.map(() => `%${searchTerm}%`)             // Contém
+      ...columns.map(() => searchTerm),
+      ...columns.map(() => `${searchTerm}%`),
+      ...columns.map(() => `%${searchTerm}`),
+      ...columns.map(() => `%${searchTerm}%`)
     ];
   
     this.selectBindings.push(...scoreBindings);
+    this.whereRaw(`(${similarityExpression}) >= ?`, [...scoreBindings, threshold]);
   
     return this;
   }
@@ -9049,13 +9021,19 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
     radiusKm: number
   ): this {
     this.track('whereNearby', { latColumn, lngColumn, lat, lng, radiusKm });
+    if (![lat, lng, radiusKm].every((n) => typeof n === 'number' && Number.isFinite(n)) || radiusKm < 0) {
+      throw new Error('whereNearby() requires finite lat/lng and a non-negative radiusKm');
+    }
 
     const latId = this.qIdent(String(latColumn));
     const lngId = this.qIdent(String(lngColumn));
+    const dialect = this.executor()?.dialect || this.dialect();
+    const rad = (expr: string) =>
+      dialect === 'sqlite' ? `(${expr} * 0.017453292519943295)` : `radians(${expr})`;
     const distanceExpression =
-      `(6371 * acos(cos(radians(?)) * cos(radians(${latId})) * ` +
-      `cos(radians(${lngId}) - radians(?)) + ` +
-      `sin(radians(?)) * sin(radians(${latId}))))`;
+      `(6371 * acos(cos(${rad('?')}) * cos(${rad(latId)}) * ` +
+      `cos(${rad(lngId)} - ${rad('?')}) + ` +
+      `sin(${rad('?')}) * sin(${rad(latId)})))`;
     this.whereRaw(`${distanceExpression} <= ?`, [lat, lng, lat, radiusKm]);
     this.selectExpression(distanceExpression, 'distance_km', [lat, lng, lat]);
     return this;
@@ -9142,25 +9120,25 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
     timezone: string = 'UTC'
   ): this {
     this.track('whereDateRangeTz', { column, startDate, endDate, timezone });
-
-    const executor = QueryKitConfig.defaultExecutor;
-    const dialect = executor?.dialect || QueryKitConfig.defaultDialect || 'sqlite';
+    const col = this.qIdent(String(column));
+    const dialect = this.executor()?.dialect || this.dialect();
 
     let dateExpression: string;
-
     switch (dialect) {
       case 'mysql':
-        dateExpression = `CONVERT_TZ(${String(column)}, 'UTC', ?) BETWEEN ? AND ?`;
+        dateExpression = `CONVERT_TZ(${col}, 'UTC', ?) BETWEEN ? AND ?`;
         break;
       case 'postgres':
-        dateExpression = `${String(column)} AT TIME ZONE 'UTC' AT TIME ZONE ? BETWEEN ? AND ?`;
+        dateExpression = `${col} AT TIME ZONE 'UTC' AT TIME ZONE ? BETWEEN ? AND ?`;
         break;
       case 'oracle':
-        dateExpression = `FROM_TZ(${String(column)}, 'UTC') AT TIME ZONE ? BETWEEN ? AND ?`;
+        dateExpression = `FROM_TZ(${col}, 'UTC') AT TIME ZONE ? BETWEEN ? AND ?`;
+        break;
+      case 'mssql':
+        dateExpression = `${col} AT TIME ZONE 'UTC' AT TIME ZONE ? BETWEEN ? AND ?`;
         break;
       default:
-        // Outros bancos - usa comparação direta
-        dateExpression = `${String(column)} BETWEEN ? AND ?`;
+        dateExpression = `${col} BETWEEN ? AND ?`;
         this.whereRaw(dateExpression, [startDate, endDate]);
         return this;
     }
@@ -9269,31 +9247,34 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
     flags: string = 'i'
   ): this {
     this.track('whereRegex', { column, pattern, flags });
-
-    const executor = QueryKitConfig.defaultExecutor;
-    const dialect = executor?.dialect || QueryKitConfig.defaultDialect || 'sqlite';
-
+    const col = this.qIdent(String(column));
+    const dialect = this.dialect();
+    const insensitive = String(flags || '').toLowerCase().includes('i');
     let regexExpression: string;
+    let bind: unknown[] = [pattern];
 
     switch (dialect) {
       case 'mysql':
-        regexExpression = `${String(column)} REGEXP ?`;
+        regexExpression = insensitive ? `${col} REGEXP ?` : `${col} REGEXP BINARY ?`;
         break;
       case 'postgres':
-        regexExpression = `${String(column)} ~ ?`;
+        regexExpression = insensitive ? `${col} ~* ?` : `${col} ~ ?`;
         break;
       case 'oracle':
-        regexExpression = `REGEXP_LIKE(${String(column)}, ?)`;
+        regexExpression = `REGEXP_LIKE(${col}, ?, ?)`;
+        bind = [pattern, flags || 'c'];
         break;
-      default:
-        // Outros bancos - usa LIKE como fallback
-        regexExpression = `${String(column)} LIKE ?`;
-        const likePattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '%');
-        this.whereRaw(regexExpression, [likePattern]);
-        return this;
+      default: {
+        regexExpression = `${col} LIKE ?`;
+        const likePattern = pattern
+          .replace(/^\^/, '')
+          .replace(/\$$/, '')
+          .replace(/[.*+?^${}()|[\]\\]/g, '%');
+        bind = [likePattern.includes('%') ? likePattern : `%${likePattern}%`];
+      }
     }
 
-    this.whereRaw(regexExpression, [pattern]);
+    this.whereRaw(regexExpression, bind);
     return this;
   }
 
@@ -9478,131 +9459,97 @@ whereMultiSearch(searches: Array<{
 
   this.track('whereMultiSearch', { searches });
 
-  searches.forEach((search) => {
-    // Pula busca se o valor for undefined ou null
-    if (search.value === undefined || search.value === null) {
-      return;
-    }
-
-    const columns = search.columns.map(col => String(col));
-    const type = search.type || 'LIKE';
-    const operator = search.operator || 'AND';
-
-          // Aplica a busca baseada no tipo - usando métodos existentes compatíveis com todos os bancos
+  const apply = (
+    q: QueryBuilder<T>,
+    column: string,
+    type: string,
+    value: any,
+    or: boolean,
+  ) => {
+    if (or) {
       switch (type) {
         case 'LIKE':
-          // LIKE padrão - funciona em todos os bancos
-          this.whereLike(columns[0], search.value);
-          break;
-        
+          q.orWhereLike(column, value);
+          return;
         case 'LIKE_CI':
-          // LIKE case-insensitive - usa whereILike que é compatível com todos os bancos
-          this.whereILike(columns[0], search.value);
-          break;
-        
+          q.orWhereILike(column, value);
+          return;
         case 'CONTAINS':
-          // Contém - usa whereContains que é compatível com todos os bancos
-          this.whereContains(columns[0], search.value);
-          break;
-        
+          q.orWhere(column, 'LIKE', `%${value}%`);
+          return;
         case 'STARTS_WITH':
-          // Começa com - usa whereStartsWith que é compatível com todos os bancos
-          this.whereStartsWith(columns[0], search.value);
-          break;
-        
+          q.orWhere(column, 'LIKE', `${value}%`);
+          return;
         case 'ENDS_WITH':
-          // Termina com - usa whereEndsWith que é compatível com todos os bancos
-          this.whereEndsWith(columns[0], search.value);
-          break;
-      
-              case 'IN':
-          // IN - funciona em todos os bancos
-          if (Array.isArray(search.value)) {
-            this.whereIn(columns[0], search.value);
-          } else {
-            this.where(columns[0], '=', search.value);
-          }
-          break;
-        
+          q.orWhere(column, 'LIKE', `%${value}`);
+          return;
+        case 'IN':
+          if (Array.isArray(value)) q.orWhereIn(column, value);
+          else q.orWhere(column, '=', value);
+          return;
         case 'NOT IN':
-          // NOT IN - funciona em todos os bancos
-          if (Array.isArray(search.value)) {
-            this.whereNotIn(columns[0], search.value);
-          } else {
-            this.where(columns[0], '!=', search.value);
-          }
-          break;
-        
+          if (Array.isArray(value)) q.orWhereNotIn(column, value);
+          else q.orWhere(column, '!=', value);
+          return;
         case 'BETWEEN':
-          // BETWEEN - funciona em todos os bancos
-          if (Array.isArray(search.value) && search.value.length === 2) {
-            this.whereBetween(columns[0], [search.value[0], search.value[1]]);
-          } else if (Array.isArray(search.value) && search.value.length === 1) {
-            // Fallback para array com apenas um elemento
-            this.where(columns[0], '=', search.value[0]);
-          } else {
-            this.where(columns[0], '=', search.value);
-          }
-          break;
-        
+          if (Array.isArray(value) && value.length === 2) q.orWhere(column, 'BETWEEN', [value[0], value[1]]);
+          else if (Array.isArray(value) && value.length === 1) q.orWhere(column, '=', value[0]);
+          else q.orWhere(column, '=', value);
+          return;
         default:
-          // Operadores de comparação padrão (=, !=, >, >=, <, <=) - funcionam em todos os bancos
-          this.where(columns[0], type, search.value);
-          break;
-    }
-
-          // Para múltiplas colunas, aplica OR entre elas
-      if (columns.length > 1) {
-        for (let i = 1; i < columns.length; i++) {
-          switch (type) {
-            case 'LIKE':
-              this.orWhereLike(columns[i], search.value);
-              break;
-            case 'LIKE_CI':
-              this.orWhere(columns[i], 'LIKE', search.value); // Fallback simples para OR
-              break;
-            case 'CONTAINS':
-              this.orWhere(columns[i], 'LIKE', `%${search.value}%`);
-              break;
-            case 'STARTS_WITH':
-              this.orWhere(columns[i], 'LIKE', `${search.value}%`);
-              break;
-            case 'ENDS_WITH':
-              this.orWhere(columns[i], 'LIKE', `%${search.value}`);
-              break;
-            case 'IN':
-              if (Array.isArray(search.value)) {
-                this.orWhereIn(columns[i], search.value);
-              } else {
-                this.orWhere(columns[i], '=', search.value);
-              }
-              break;
-            case 'NOT IN':
-              if (Array.isArray(search.value)) {
-                this.orWhereNotIn(columns[i], search.value);
-              } else {
-                this.orWhere(columns[i], '!=', search.value);
-              }
-              break;
-            case 'BETWEEN':
-              if (Array.isArray(search.value) && search.value.length === 2) {
-                this.orWhere(columns[i], 'BETWEEN', [search.value[0], search.value[1]]);
-              } else if (Array.isArray(search.value) && search.value.length === 1) {
-                this.orWhere(columns[i], '=', search.value[0]);
-              } else {
-                this.orWhere(columns[i], '=', search.value);
-              }
-              break;
-            default:
-              // Operadores de comparação padrão
-              if (['=', '!=', '>', '>=', '<', '<='].includes(type)) {
-                this.orWhere(columns[i], type as '=' | '!=' | '>' | '>=' | '<' | '<=', search.value);
-              }
-              break;
+          if (['=', '!=', '>', '>=', '<', '<='].includes(type)) {
+            q.orWhere(column, type as '=' | '!=' | '>' | '>=' | '<' | '<=', value);
           }
-        }
       }
-    });
+      return;
+    }
+    switch (type) {
+      case 'LIKE':
+        q.whereLike(column, value);
+        return;
+      case 'LIKE_CI':
+        q.whereILike(column, value);
+        return;
+      case 'CONTAINS':
+        q.whereContains(column, value);
+        return;
+      case 'STARTS_WITH':
+        q.whereStartsWith(column, value);
+        return;
+      case 'ENDS_WITH':
+        q.whereEndsWith(column, value);
+        return;
+      case 'IN':
+        if (Array.isArray(value)) q.whereIn(column, value);
+        else q.where(column, '=', value);
+        return;
+      case 'NOT IN':
+        if (Array.isArray(value)) q.whereNotIn(column, value);
+        else q.where(column, '!=', value);
+        return;
+      case 'BETWEEN':
+        if (Array.isArray(value) && value.length === 2) q.whereBetween(column, [value[0], value[1]]);
+        else if (Array.isArray(value) && value.length === 1) q.where(column, '=', value[0]);
+        else q.where(column, '=', value);
+        return;
+      default:
+        q.where(column, type as any, value);
+    }
+  };
+
+  for (const search of searches) {
+    if (search.value === undefined || search.value === null) continue;
+    const columns = search.columns.map((col) => String(col));
+    if (!columns.length) continue;
+    const type = search.type || 'LIKE';
+    const logical = search.operator === 'OR' ? 'OR' : 'AND';
+    this.whereGroup((q) => {
+      apply(q, columns[0]!, type, search.value, false);
+      for (let i = 1; i < columns.length; i++) {
+        apply(q, columns[i]!, type, search.value, true);
+      }
+    }, logical);
+  }
 
   return this;
 }

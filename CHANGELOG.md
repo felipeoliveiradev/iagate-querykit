@@ -61,7 +61,7 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - Fuzzy-search score placeholders are real bindings (`selectBindings`), not a leftover `pendingAction`.
 - `pluck` / `pluckSync` clone first; `scalar()` is async; `run()` refuses pending writes.
 - `BaseDatabaseAdapter.backup/restore/getConnectionInfo` throw instead of silently succeeding.
-- See `STUDY.md` for architecture, coverage (83.09% lines), and measured benchmarks.
+- See `STUDY.md` for architecture, coverage (95.73% lines / 90.14% branches), and measured benchmarks.
 
 ### Adversarial hardening (same 1.0.0, unpublished)
 
@@ -82,3 +82,11 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - Unicode identifiers (`\p{L}\p{N}`) are allowed when quoted.
 - Live Postgres 16 + MySQL 8 integration tests run only against throwaway loopback databases (CI service containers / `docker-compose.test.yml` / local test cluster). Each suite `CREATE DATABASE qk_e_*` and `DROP`s it after. Ambient `POSTGRES_*` / `MYSQL_*` / `DATABASE_URL` are ignored. Non-loopback hosts are refused.
 - Property tests (`fast-check`) and every README/docs example run as Vitest cases.
+
+### Relations, geo/FTS, dialects (same 1.0.0, unpublished)
+
+- `attachRelations` is a static import (no `QK_RELATIONS_PATH` / dynamic `import()`). Eager-load batches with `whereIn`, honors `localKey`/`ownerKey`, nested graphs (depth 4, cycle guard), and selector `select` lists (join keys are kept for the join then stripped).
+- `whereFullText` / `whereNearby` / `whereRegex` / `whereDateRangeTz` quote identifiers and pick SQL from the bound executor. Live round-trips on throwaway SQLite, Postgres, and MySQL. Oracle and SQL Server are SQL-snapshot + adapter-mock tested (no Docker in this environment).
+- `whereRelevanceSearch` binds score placeholders. `whereFuzzySearch` validates threshold before mutating. `stats({ customColumns })` and `selectRowNumber` quote identifiers. `whereMultiSearch` honors `OR` and case-insensitive extra columns.
+- SQLite registers `acos`/`cos`/`sin`/`radians` so Haversine `whereNearby` executes.
+- Coverage: **95.73% lines / 90.14% branches / 91.06% functions** (427 tests). Packed tarball re-verified in ESM, CJS, TS NodeNext, and TS bundler consumers.

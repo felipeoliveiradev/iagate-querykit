@@ -1,6 +1,6 @@
 # Estudo de arquitetura — iagate-querykit 1.0.0
 
-Estudo in-loco do repositório (branch `cursor/querykit-production-hardening-3f5f`), medido e remeido em 14 de outubro de 2026. Números de cobertura vêm do Vitest + `@vitest/coverage-v8@2.1.9` (358 testes). Números de desempenho vêm de `node scripts/bench.mjs` contra `better-sqlite3@11.10.0` em Node `v22.14.0`.
+Estudo in-loco do repositório (branch `cursor/querykit-production-hardening-3f5f`), medido e remeido em 14 de outubro de 2026. Números de cobertura vêm do Vitest + `@vitest/coverage-v8@2.1.9` (427 testes). Números de desempenho vêm de `node scripts/bench.mjs` contra `better-sqlite3@11.10.0` em Node `v22.14.0`.
 
 O pacote publicado hoje ainda é `0.1.46`. Esta árvore é o 1.0.0 **não publicado**. Depois do estudo, as melhorias estruturais listadas na seção 9 que eram claramente benéficas foram **implementadas neste PR**. A seção 10 descreve o que mudou, com números.
 
@@ -279,50 +279,40 @@ Não comparei contra Knex/Kysely neste run (não estão instalados). O número a
 
 Comando: `npx vitest run --coverage` (`@vitest/coverage-v8@2.1.9`).
 
-**Suite:** 358 passou, 0 pulados, 32 arquivos. Postgres e MySQL live em bancos throwaway `127.0.0.1` (`qk_e_*` criado e dropado).
+**Suite:** 427 passou, 0 pulados, 38 arquivos. Postgres e MySQL live em bancos throwaway `127.0.0.1` (`qk_e_*` criado e dropado).
 
-**Totais (v8, `src/**/*.ts` excluindo testes):**
+**Totais (v8, `src/**/*.ts` excluindo testes e `src/types.ts` type-only):**
 
 | | % |
 | --- | ---: |
-| Linhas / statements | **83,09%** |
-| Branches | **82,55%** |
-| Funções | **84,41%** |
+| Linhas / statements | **95,73%** |
+| Branches | **90,14%** |
+| Funções | **91,06%** |
 
 ### Por arquivo (linhas)
 
 | Arquivo | % linhas | Nota |
 | --- | ---: | --- |
-| `event-manager.ts` | 100 | |
-| `simulation-manager.ts` | 100 | |
-| `parallel-query.ts` | 100 | |
-| `raw.ts` / `table.ts` | 100 | |
-| `sql/compile.ts` | **97,58** | extraído no estudo + fuzz |
-| `sql/bindings.ts` | 86,20 | Date/JSON/undefined |
-| `adapters/better-sqlite3.ts` | 95,38 | |
-| `adapters/postgresql.ts` | **96,20** | integração live throwaway |
-| `adapters/mysql.ts` | **93,33** | integração live throwaway |
-| `sql/placeholders.ts` | 92,22 | |
-| `sql/dialect.ts` | 94,44 | OFFSET sem LIMIT coberto |
+| `event-manager.ts` / `simulation-manager.ts` / `parallel-query.ts` / `raw.ts` / `table.ts` / `querykit.ts` / `seed.ts` | 100 | |
+| `relations-resolver.ts` | **99,32** | import estático; eager/lazy/nested/N+1 |
+| `adapters/postgresql.ts` | **98,73** | live throwaway + tx/close mock |
+| `adapters/sqlserver.ts` | **98,90** | snapshots + mock tx/close (sem Docker) |
 | `view-manager.ts` | 97,97 | |
-| `model.ts` | 91,89 | inclui `id === 0` |
-| `query-builder.ts` | **81,80** | JSDoc não conta; ramos geo/search/mssql |
-| `querykit.ts` | 78,57 | |
-| `adapters/oracle.ts` | 61,45 | sem servidor live |
-| `adapters/sqlserver.ts` | 59,34 | sem servidor live |
-| `seed.ts` | 61,40 | class Seed parcialmente |
-| `database-adapters/base-adapter.ts` | 62,96 | throws novos sem teste direto |
-| `relations-resolver.ts` | **1,61** | import dinâmico — v8 não atribui ao arquivo |
+| `sql/compile.ts` | 97,58 | |
+| `adapters/oracle.ts` | **96,87** | snapshots + mock tx/close (sem Docker) |
+| `adapters/mysql.ts` | **98,88** | live throwaway + tx/close mock |
+| `query-builder.ts` | **93,25** | geo/FTS/regex/stats/row_number |
+| `model.ts` | 91,89 | |
+| `migration-dsl.ts` | **91,97** | inclui Oracle |
+| `database-adapters/base-adapter.ts` | **100** | throws cobertos |
 
-### Áreas pouco testadas
+### Áreas pouco testadas (residual)
 
-1. **`relations-resolver.ts` como arquivo** — os testes passam pelo `relationship()` do builder; o módulo isolado quase não é importado estaticamente.
-2. **Caminhos `close()` / `transaction()`** de pg/mysql/oracle/mssql (mocks não exercitam `end`/`release` de verdade).
-3. **Oracle / SQL Server live.**
-4. **Ramos de `quoteIdent` mysql/mssql** (a maior parte dos testes usa dialect sqlite).
-5. **Helpers geo / full-text / `stats()`** — smoke de SQL, sem round-trip.
+1. **Oracle / SQL Server live** — esta VM não tem `docker`; snapshots de SQL + mocks de pool/tx/close.
+2. Alguns ramos de `migration-manager` (`runSync` ausente) e `trigger-manager` (catálogo default).
+3. `whereFullText` no SQLite continua LIKE (não FTS5 virtual table).
 
-Integração SQLite: 8 testes reais (insert multi-row, view, migration DSL, seed, FK). Postgres/MySQL: 7 testes live contra `CREATE DATABASE qk_e_*` no loopback (CI service containers + cluster local / `docker-compose.test.yml`).
+Integração SQLite: 8 testes reais. Postgres/MySQL: live contra `CREATE DATABASE qk_e_*` no loopback, agora incluindo geo + full-text.
 
 ---
 
@@ -360,13 +350,13 @@ Ordem: impacto / risco. As marcadas **FEITO** foram implementadas neste PR.
 | 5 | P1 | `pluck` não mutar; `scalar()` async; `run()` recusar writes | **FEITO** |
 | 6 | P1 | `selectAllExcept` de verdade (introspecção) | **FEITO** (SQLite; pg/mysql no `all()` async) |
 | 7 | P1 | Stubs de adapter que fingem sucesso | **FEITO** (agora throw) |
-| 8 | P2 | Builder **imutável** (cada método retorna clone, estilo Kysely) | não — 110 métodos, risco alto, ganho de GC incerto (clone já custa 1,08 µs) |
+| 8 | P2 | Builder **imutável** (cada método retorna clone, estilo Kysely) | não — 110 métodos, risco alto, ganho de GC incerto (clone já custa 1,54 µs) |
 | 9 | P2 | Schema TS (colunas tipadas) | não — é um produto diferente (Drizzle) |
 | 10 | P2 | Thenable / `execute()` único no lugar de `all`+`make` | não — breaking de gosto; `make()` documentado |
 | 11 | P2 | `splitting: true` no tsup para não inlinear o QB em 8 entries | pendente |
 | 12 | P2 | Tirar JSDoc-novela do `query-builder.ts` (~8k linhas) para o site | pendente — não muda runtime |
 | 13 | P3 | Savepoints; cache de `prepare` no SQLite | pendente |
-| 14 | P3 | Cobrir `relations-resolver` com import estático no teste | pendente |
+| 14 | P3 | Cobrir `relations-resolver` com import estático no teste | **FEITO** |
 | 15 | P3 | Mover extras (scheduler/simulation) para `iagate-querykit/extras` | pendente — breaking de import, pouco ganho agora |
 
 Não fiz 8–10 de propósito: ninguém usa a lib ainda, mas um rewrite imutável + schema-first **é outra biblioteca**. O que estava claramente podre (compilador dentro da god class, singleton obrigatório, `pendingAction` polimórfico, adapters copiados) foi corrigido.
@@ -457,6 +447,43 @@ Pedido do owner: estudar tudo, ser adversário, escrever testes de propriedade/f
 - Integração Postgres 16 + MySQL 8 **só em banco throwaway no loopback** (`127.0.0.1`). Cada suite cria `qk_e_<pid>_<rand>` e dá `DROP DATABASE` no `afterAll`. `POSTGRES_HOST` / `DATABASE_URL` / credenciais de ambiente são **ignorados**. Host que não seja loopback lança. CI usa service containers efêmeros; local: `docker-compose.test.yml` (tmpfs) ou o cluster de teste iniciado nesta VM.
 
 **Suite desta rodada (remeida agora):** 358 passou / 0 pulados. Cobertura **83,09%** linhas / **82,55%** branches / **84,41%** funções. Typecheck strict passou. Postgres e MySQL live passaram (somente `127.0.0.1`, `qk_e_*` dropado).
+
+Não publicamos no npm.
+
+---
+
+## 12. Rodada 3 — relations, geo/FTS, Oracle/MSSQL, cobertura 90%+
+
+Pedido: cobrir o resolver de relações de verdade, geo + full-text em SQLite/Postgres/MySQL, Oracle e SQL Server live via Docker se possível (senão snapshots), outra passada adversarial, 90%+ linhas/branches, re-verificar o tarball, atualizar docs. Mesma regra: só DB throwaway no loopback.
+
+### O que mudou no código
+
+- `attachRelations` é import estático em `query-builder.ts` (sumiu o `import()` dinâmico / `QK_RELATIONS_PATH`).
+- Resolver: `localKey`/`ownerKey` consistentes; selector `select` inclui a join key e depois a remove se o caller não pediu; hasMany anexa o filho a **todos** os pais com a mesma key; nested até profundidade 4 com guarda de ciclo; `whereIn` em lote (anti-N+1).
+- `whereRegex` usa `this.dialect()` + `qIdent` e honra a flag `i` (`~*` / `REGEXP BINARY` / `REGEXP_LIKE(..., flags)`).
+- `whereRelevanceSearch` passa os `?` do score para `selectBindings`.
+- `whereFuzzySearch` valida o threshold **antes** de mutar o builder.
+- `stats({ customColumns })` e `selectRowNumber` quotam identificadores; SQLite usa `ROW_NUMBER() OVER`.
+- `whereDateRangeTz` emite `AT TIME ZONE` no MSSQL.
+- `whereFullText` ignora query em branco; `whereMultiSearch` honra `operator: 'OR'` e LIKE_CI nas colunas extras.
+- `BetterSqlite3Executor` registra `acos`/`cos`/`sin`/`radians` (SQLite stock não tem).
+
+### Bugs novos desta rodada
+
+Ver CHANGELOG / AUDIT §12 — 15 itens, cada um com teste de regressão.
+
+### Números
+
+| | |
+| --- | --- |
+| Testes | **427 passou / 0 pulados / 38 arquivos** |
+| Linhas | **95,73%** |
+| Branches | **90,14%** |
+| Funções | **91,06%** |
+| Typecheck | passou |
+| Consumer verify | ESM, CJS, TS NodeNext, TS bundler — **PASS** |
+| Oracle/MSSQL live | **não** — `docker` ausente nesta VM; snapshots + mocks |
+| DBs tocados | só `127.0.0.1` Postgres 16 + MySQL 8 + SQLite `:memory:`; `qk_e_*` dropado (0 residual) |
 
 Não publicamos no npm.
 

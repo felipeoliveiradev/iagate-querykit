@@ -589,8 +589,8 @@ describe('QueryBuilder new methods', () => {
       const { sql } = qb.toSql()
       
       expect(sql).toContain('6371 * acos')
-      expect(sql).toContain('cos(radians')
-      expect(sql).toContain('sin(radians')
+      expect(sql).toMatch(/cos\((?:radians|\()/)
+      expect(sql).toMatch(/sin\((?:radians|\()/)
     })
 
     it('adds whereRaw with distance condition', () => {

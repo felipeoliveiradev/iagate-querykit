@@ -71,6 +71,39 @@ describe('mysql integration (throwaway loopback only)', () => {
     expect(concurrent[0]?.id).toBe(row.id);
   });
 
+  it('full-text and nearby helpers run on throwaway MySQL', async () => {
+    await exec.executeQuery(
+      `CREATE TABLE qk_places (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255),
+        body TEXT,
+        lat DOUBLE,
+        lng DOUBLE,
+        FULLTEXT KEY ft_places (name, body)
+      )`,
+      [],
+    );
+    await new QueryBuilder('qk_places').insert([
+      { name: 'Sao Paulo', body: 'coffee shop downtown', lat: -23.5505, lng: -46.6333 },
+      { name: 'Osasco', body: 'warehouse', lat: -23.5329, lng: -46.7916 },
+      { name: 'Lisbon', body: 'pastelaria', lat: 38.7223, lng: -9.1393 },
+    ]).make();
+
+    const fts = await new QueryBuilder('qk_places').whereFullText(['name', 'body'], 'coffee').all<any>();
+    expect(fts.some((r) => r.name === 'Sao Paulo')).toBe(true);
+
+    const near = await new QueryBuilder('qk_places')
+      .whereNearby('lat', 'lng', -23.5505, -46.6333, 20)
+      .all<any>();
+    const names = near.map((r) => r.name);
+    expect(names).toContain('Sao Paulo');
+    expect(names).toContain('Osasco');
+    expect(names).not.toContain('Lisbon');
+
+    const rx = await new QueryBuilder('qk_places').whereRegex('name', 'Sao', 'i').all<any>();
+    expect(rx.some((r) => /Sao/.test(r.name))).toBe(true);
+  });
+
   it('offset without limit and FIND_IN_SET', async () => {
     await exec.executeQuery(
       'CREATE TABLE qk_extra (id INT PRIMARY KEY AUTO_INCREMENT, email VARCHAR(255), roles VARCHAR(255))',

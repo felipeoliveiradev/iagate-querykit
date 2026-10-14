@@ -34,6 +34,25 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
     } catch {
       /* older mocks */
     }
+    this.installMathHelpers();
+  }
+
+  /** Stock SQLite has no acos/cos/sin/radians — required by whereNearby. */
+  private installMathHelpers(): void {
+    if (typeof this.db?.function !== 'function') return;
+    const defs: Array<[string, (n: number) => number]> = [
+      ['acos', Math.acos],
+      ['cos', Math.cos],
+      ['sin', Math.sin],
+      ['radians', (x) => (Number(x) * Math.PI) / 180],
+    ];
+    for (const [name, fn] of defs) {
+      try {
+        this.db.function(name, { deterministic: true }, (x: unknown) => fn(Number(x)));
+      } catch {
+        /* already registered on a wrapped Database */
+      }
+    }
   }
 
   executeQuerySync(sql: string, bindings: any[] = []): QueryResult {
