@@ -174,7 +174,7 @@ These match the source audit and are addressed in 1.0.0.
 | TypeScript `moduleResolution: NodeNext` (`tsc` + emit + run) | **PASS** — `tsc ok`, `nodenext-ok nodenext@x.com` |
 | TypeScript `moduleResolution: bundler` (`tsc --noEmit`) | **PASS** — `tsc ok` |
 
-Re-verified this round: same six PASS rows. Local suite: **464 passed / 0 skipped / 43 files**. Coverage **95.63% lines / 90.40% branches / 91.76% functions**. Live throwaway engines on `127.0.0.1`: Postgres 16, MySQL 8, SQL Server 2022, Oracle Free 23 (`qk_e_*` dropped, 0 leftovers). CI workflow starts Postgres 16 and MySQL 8; Oracle/MSSQL are `compose --profile full` (sequential, ~2 GiB each).
+Re-verified this round: same six PASS rows. Local suite: **489 passed / 0 skipped / 45 files**. Coverage **96.14% lines / 90.04% branches / 92.69% functions**. Live throwaway engines on `127.0.0.1`: Postgres 16, MySQL 8, SQL Server 2022, Oracle Free 23 (`qk_e_*` dropped, 0 leftovers). CI workflow starts Postgres 16 and MySQL 8; Oracle/MSSQL are `compose --profile full` (sequential, ~2 GiB each).
 
 ---
 

@@ -201,7 +201,7 @@ export class QueryBuilder<T = any> {
   private isFtsMatchFailure(err: unknown): boolean {
     if (this.ftsMode !== 'auto' || !this.ftsLike) return false;
     const msg = err instanceof Error ? err.message : String(err);
-    return /no such (table|module)|unable to use function MATCH|fts5|not a fts/i.test(msg);
+    return /no such (table|module|column)|unable to use function MATCH|fts5|not a fts|string literal/i.test(msg);
   }
 
   private rewriteFullTextLike(): void {

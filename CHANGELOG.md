@@ -112,3 +112,4 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - SQLite FTS: `whereFullText(..., { mode: 'match' | 'like' | 'auto' })`. `auto` (default) retries with `LIKE` when no virtual table exists.
 - `BetterSqlite3Executor` enables safe integers by default; values inside `MAX_SAFE_INTEGER` hydrate to `number`.
 - `UnsupportedFeatureError` for optional capabilities (example: `memory` regex).
+- Suite: **489 tests**. Coverage **96.14% lines / 90.04% branches / 92.69% functions**.

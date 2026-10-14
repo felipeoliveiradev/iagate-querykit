@@ -1,6 +1,6 @@
 # Estudo de arquitetura — iagate-querykit 1.0.0
 
-Estudo in-loco do repositório (branch `cursor/querykit-production-hardening-3f5f`), medido e remeido em 14 de outubro de 2026. Números de cobertura vêm do Vitest + `@vitest/coverage-v8@2.1.9` (464 testes). Números de desempenho vêm de `node scripts/bench.mjs` contra `better-sqlite3@11.10.0` em Node `v22.14.0`.
+Estudo in-loco do repositório (branch `cursor/querykit-production-hardening-3f5f`), medido e remeido em 14 de outubro de 2026. Números de cobertura vêm do Vitest + `@vitest/coverage-v8@2.1.9` (489 testes). Números de desempenho vêm de `node scripts/bench.mjs` contra `better-sqlite3@11.10.0` em Node `v22.14.0`.
 
 O pacote publicado hoje ainda é `0.1.46`. Esta árvore é o 1.0.0 **não publicado**. Depois do estudo, as melhorias estruturais listadas na seção 9 que eram claramente benéficas foram **implementadas neste PR**. A seção 10 descreve o que mudou, com números.
 
@@ -595,6 +595,15 @@ Um adapter novo: `registerDialect(meuDialect)` + `createQueryKit({ dialect, driv
 - Adapters envolvem exceções em `DriverError` (`cause`, `driverCode`, SQL, params redigidos).
 - FTS: `mode: 'match' | 'like' | 'auto'`. SQLite `auto` tenta MATCH e cai em LIKE se não houver virtual table.
 - `BetterSqlite3Executor` liga `defaultSafeIntegers` por padrão; `hydrateInteger` devolve `number` dentro de `MAX_SAFE_INTEGER`.
+
+### Números (rodada 5)
+
+| | |
+| --- | --- |
+| Testes | **489 passou / 0 pulados / 45 arquivos** |
+| Linhas | **96,14%** |
+| Branches | **90,04%** |
+| Funções | **92,69%** |
 
 ---
 

@@ -39,7 +39,9 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
     } catch {
       /* older mocks */
     }
-    if (options?.safeIntegers !== false && typeof this.db.defaultSafeIntegers === 'function') {
+    const enableSafe =
+      options?.safeIntegers === true || (this.ownsConnection && options?.safeIntegers !== false);
+    if (enableSafe && typeof this.db.defaultSafeIntegers === 'function') {
       try {
         this.db.defaultSafeIntegers(true);
       } catch {
