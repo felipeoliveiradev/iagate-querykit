@@ -1,6 +1,6 @@
 # Estudo de arquitetura — iagate-querykit 1.0.0
 
-Estudo in-loco do repositório (branch `cursor/querykit-production-hardening-3f5f`), medido em 14 de outubro de 2026. Números de cobertura vêm do Vitest + `@vitest/coverage-v8@2.1.9`. Números de desempenho vêm de `node scripts/bench.mjs` contra `better-sqlite3@11.10.0` em Node `v22.14.0`.
+Estudo in-loco do repositório (branch `cursor/querykit-production-hardening-3f5f`), medido e remeido em 14 de outubro de 2026. Números de cobertura vêm do Vitest + `@vitest/coverage-v8@2.1.9` (358 testes). Números de desempenho vêm de `node scripts/bench.mjs` contra `better-sqlite3@11.10.0` em Node `v22.14.0`.
 
 O pacote publicado hoje ainda é `0.1.46`. Esta árvore é o 1.0.0 **não publicado**. Depois do estudo, as melhorias estruturais listadas na seção 9 que eram claramente benéficas foram **implementadas neste PR**. A seção 10 descreve o que mudou, com números.
 
@@ -93,7 +93,7 @@ O builder **sempre emite `?`**. O adapter é quem traduz para `$1` / `:1` / `@p1
 
 | Linhas | Arquivo | Papel |
 | ---: | --- | --- |
-| ~9447 | `src/query-builder.ts` | God class fluente (CRUD, joins, busca, geo, stats) |
+| ~9608 | `src/query-builder.ts` | God class fluente (CRUD, joins, busca, geo, stats) |
 | 722 | `src/migration-dsl.ts` | DSL `createTable` / `alterTable` |
 | 649 | `src/trigger-manager.ts` | DDL + triggers semânticos |
 | 337 | `src/view-manager.ts` | CREATE/DROP/LIST view |
@@ -101,10 +101,11 @@ O builder **sempre emite `?`**. O adapter é quem traduz para `$1` / `:1` / `@p1
 | 268 | `src/model.ts` | Active Record fino |
 | 212 | `src/simulation-manager.ts` | estado em memória para testes |
 | 207 | `src/seed.ts` | truncate + insert |
-| 95–136 | `src/adapters/{sqlite,mysql,pg,oracle,mssql}.ts` | drivers |
-| 170 | `src/sql/compile.ts` | compilador SELECT/WHERE (extraído neste estudo) |
+| 88–119 | `src/adapters/{sqlite,mysql,pg,oracle,mssql}.ts` | drivers |
+| 173 | `src/sql/compile.ts` | compilador SELECT/WHERE (extraído neste estudo) |
+| 37 | `src/sql/bindings.ts` | Date/JSON/undefined/instâncias |
 | 107 | `src/sql/placeholders.ts` | walker de `?` |
-| 97 | `src/sql/identifiers.ts` | quoting + `UnsafeIdentifierError` |
+| 98 | `src/sql/identifiers.ts` | quoting + `UnsafeIdentifierError` (unicode `\p{L}\p{N}`) |
 | 99 | `src/config.ts` | singleton global |
 | 86 | `src/database-manager.ts` | multi-DB |
 | 45 | `src/querykit.ts` | fábrica de instância |
@@ -217,7 +218,7 @@ Todos implementam `DatabaseExecutor` (`dialect`, `executeQuery`, `run?`, `transa
 - mysql → `` `ident` ``
 - mssql → `[ident]`
 
-Identificadores fora de `[A-Za-z_][A-Za-z0-9_]*` (paths com ponto ok) lançam `UnsafeIdentifierError`.
+Identificadores fora de `[\p{L}_][\p{L}\p{N}_]*` (paths com ponto ok; unicode permitido quando quotado) lançam `UnsafeIdentifierError`.
 
 **Paging:** sqlite/mysql/pg usam `LIMIT ? OFFSET ?`. mssql/oracle usam `OFFSET n ROWS FETCH NEXT n ROWS ONLY`.
 
@@ -237,7 +238,7 @@ Depois do endurecimento 1.0.0 + extrações deste estudo:
 | Superfície | Política |
 | --- | --- |
 | Identificadores (tabela, coluna, alias, view, trigger, index) | Sempre quotados; rejeitados se inseguros |
-| Valores | Sempre bindings `?` |
+| Valores | Sempre bindings `?`; `normalizeBinding` (Date→ISO, objeto plano/null-proto→JSON; rejeita `undefined`, função, instância) |
 | `whereRaw` / `havingRaw` / `selectExpression` | SQL cru **por desenho** — o caller é responsável; bindings opcionais agora existem em `selectExpression(expr, alias, bindings)` |
 | Conversão de placeholder | Walker que ignora `'...'`, `"..."`, `` `...` ``, `--` e `/* */`; operadores JSON `?` / `?|` / `?&` do Postgres não são tocados |
 | Views | `inlineBindings` só para DDL; usa `escapeSqlLiteral` |
@@ -255,21 +256,22 @@ Ambiente: Node v22.14.0, `better-sqlite3@11.10.0`, SQLite `:memory:`, script `sc
 
 | Medição | Iterações | Total | Por op | Heap Δ |
 | --- | ---: | ---: | ---: | ---: |
-| `toSql` simples (`select + where + order + limit`) | 20 000 | **58,21 ms** | **2,91 µs** | +1,01 MB |
-| `toSql` com join + 3 wheres + `whereIn` + limit | 10 000 | **62,57 ms** | **6,26 µs** | +1,08 MB |
-| `clone()` | 20 000 | **21,61 ms** | **1,08 µs** | −0,10 MB |
-| `insert().make()` SQLite | 2 000 | **16,38 ms** | **8,19 µs** | −1,50 MB |
-| `where().all()` SQLite | 2 000 | **17,40 ms** | **8,70 µs** | +1,41 MB |
-| `createQueryKit().table().all()` | 2 000 | **17,05 ms** | **8,53 µs** | −0,52 MB |
+| `toSql` simples (`select + where + order + limit`) | 20 000 | **107,16 ms** | **5,36 µs** | +0,19 MB |
+| `toSql` com join + 3 wheres + `whereIn` + limit | 10 000 | **115,78 ms** | **11,58 µs** | +1,95 MB |
+| `clone()` | 20 000 | **30,75 ms** | **1,54 µs** | −1,66 MB |
+| `insert().make()` SQLite | 2 000 | **22,84 ms** | **11,42 µs** | +1,14 MB |
+| `where().all()` SQLite | 2 000 | **19,17 ms** | **9,59 µs** | −0,60 MB |
+| `createQueryKit().table().all()` | 2 000 | **25,00 ms** | **12,50 µs** | +1,36 MB |
 
 Leitura:
 
-- Compilar SQL é barato (~3–6 µs). O custo dominante de um `all()` em SQLite in-memory (~9 µs) é o próprio round-trip + alocação do builder, não o compilador.
-- `createQueryKit` **não** é mais lento que o singleton (8,53 µs vs 8,70 µs).
+- Compilar SQL continua barato (~5–12 µs). A validação extra desta rodada (bindings, `orderBy`/`limit` inteiro, quote) acrescentou ~2–5 µs no `toSql` simples em relação aos 2,91 µs medidos antes do endurecimento — ainda irrelevante frente ao I/O.
+- O custo dominante de um `all()` em SQLite in-memory (~10 µs) é o round-trip + alocação do builder, não o compilador.
+- `createQueryKit` continua na mesma ordem de grandeza que o singleton.
 - Alocações: cada `new QueryBuilder` cria ~10 arrays. Em um servidor quente, um **pool de builders** ou builder imutável com structural sharing (estilo Kysely) reduziria GC. Não implementado — seria a próxima refatoração grande.
 - Pooling: pg/mysql/oracle/mssql já abrem pool (default 10). SQLite é single-connection — correto para o driver.
 
-Não comparei contra Knex/Kysely neste run (não estão instalados). O número absoluto de `toSql` (3 µs) é compatível com um builder fluente sem codegen.
+Não comparei contra Knex/Kysely neste run (não estão instalados). O número absoluto de `toSql` (5 µs) é compatível com um builder fluente sem codegen.
 
 ---
 
@@ -277,15 +279,15 @@ Não comparei contra Knex/Kysely neste run (não estão instalados). O número a
 
 Comando: `npx vitest run --coverage` (`@vitest/coverage-v8@2.1.9`).
 
-**Suite:** 288 passou, 3 pulados (Postgres/MySQL — sem Docker neste ambiente), 28 arquivos.
+**Suite:** 358 passou, 0 pulados, 32 arquivos. Postgres e MySQL live em bancos throwaway `127.0.0.1` (`qk_e_*` criado e dropado).
 
 **Totais (v8, `src/**/*.ts` excluindo testes):**
 
-| | Total | Coberto | % |
-| --- | ---: | ---: | ---: |
-| Linhas / statements | 3232 | 2546 | **78,77%** |
-| Branches | 1208 | 981 | **81,20%** |
-| Funções | 373 | 302 | **80,96%** |
+| | % |
+| --- | ---: |
+| Linhas / statements | **83,09%** |
+| Branches | **82,55%** |
+| Funções | **84,41%** |
 
 ### Por arquivo (linhas)
 
@@ -295,22 +297,22 @@ Comando: `npx vitest run --coverage` (`@vitest/coverage-v8@2.1.9`).
 | `simulation-manager.ts` | 100 | |
 | `parallel-query.ts` | 100 | |
 | `raw.ts` / `table.ts` | 100 | |
-| `sql/compile.ts` | **95,04** | extraído agora |
+| `sql/compile.ts` | **97,58** | extraído no estudo + fuzz |
+| `sql/bindings.ts` | 86,20 | Date/JSON/undefined |
 | `adapters/better-sqlite3.ts` | 95,38 | |
+| `adapters/postgresql.ts` | **96,20** | integração live throwaway |
+| `adapters/mysql.ts` | **93,33** | integração live throwaway |
 | `sql/placeholders.ts` | 92,22 | |
-| `sql/dialect.ts` | 94,11 | |
+| `sql/dialect.ts` | 94,44 | OFFSET sem LIMIT coberto |
 | `view-manager.ts` | 97,97 | |
-| `model.ts` | 90,76 | |
-| `query-builder.ts` | **75,66** | JSDoc não conta; ramos de geo/search/mssql |
+| `model.ts` | 91,89 | inclui `id === 0` |
+| `query-builder.ts` | **81,80** | JSDoc não conta; ramos geo/search/mssql |
 | `querykit.ts` | 78,57 | |
-| `adapters/mysql.ts` | 65,55 | tx / close pouco exercitados no mock |
-| `adapters/postgresql.ts` | 60,75 | idem |
-| `adapters/oracle.ts` | 61,45 | idem |
-| `adapters/sqlserver.ts` | 59,34 | idem |
+| `adapters/oracle.ts` | 61,45 | sem servidor live |
+| `adapters/sqlserver.ts` | 59,34 | sem servidor live |
 | `seed.ts` | 61,40 | class Seed parcialmente |
 | `database-adapters/base-adapter.ts` | 62,96 | throws novos sem teste direto |
 | `relations-resolver.ts` | **1,61** | import dinâmico — v8 não atribui ao arquivo |
-| `src/sql/index.ts` / `adapters/index.ts` | 0 | barrels |
 
 ### Áreas pouco testadas
 
@@ -320,7 +322,7 @@ Comando: `npx vitest run --coverage` (`@vitest/coverage-v8@2.1.9`).
 4. **Ramos de `quoteIdent` mysql/mssql** (a maior parte dos testes usa dialect sqlite).
 5. **Helpers geo / full-text / `stats()`** — smoke de SQL, sem round-trip.
 
-Integração SQLite: 8 testes reais (insert multi-row, view, migration DSL, seed, FK). Postgres/MySQL rodam no CI (services `postgres:16` e `mysql:8`).
+Integração SQLite: 8 testes reais (insert multi-row, view, migration DSL, seed, FK). Postgres/MySQL: 7 testes live contra `CREATE DATABASE qk_e_*` no loopback (CI service containers + cluster local / `docker-compose.test.yml`).
 
 ---
 
@@ -383,8 +385,8 @@ Não fiz 8–10 de propósito: ninguém usa a lib ainda, mas um rewrite imutáve
 - `run()` compilava SELECT mesmo depois de `insert()`.
 - `selectAllExcept` era no-op na hora de executar.
 - Placeholders do fuzzy search iam para o SQL e **não** para `bindings`.
-- Cobertura real **78,77%** linhas; `relations-resolver` efetivamente sem cobertura de arquivo.
-- `toSql` simples: **2,91 µs**; insert SQLite: **8,19 µs**.
+- Cobertura real **83,09%** linhas (era 78,77% antes do fuzz/edges/PG+MySQL live); `relations-resolver` efetivamente sem cobertura de arquivo.
+- `toSql` simples: **5,36 µs**; insert SQLite: **11,42 µs** (validação extra no caminho quente).
 
 ### Implementado (com testes)
 
@@ -400,7 +402,7 @@ Não fiz 8–10 de propósito: ninguém usa a lib ainda, mas um rewrite imutáve
 | `run()` recusa write pendente | comportamento coberto indiretamente; writes usam `make()` |
 | Testes de `selectAllExcept`/`fuzzy` atualizados para o novo estado | `query-builder.test.ts` |
 
-**Suite depois da refatoração:** 288 passou / 3 pulados. Typecheck strict passou. `tsup` passou.
+**Suite depois da refatoração estrutural:** 288 passou / 3 pulados (Postgres/MySQL ainda sem servidor). Depois da rodada adversarial + DBs throwaway: **358 passou / 0 pulados**. Typecheck strict passou. `tsup` passou.
 
 **Bench depois da extração do compilador** (números da seção 6): compilação continua na casa dos microssegundos — a extração **não** piorou o caminho quente.
 
@@ -454,7 +456,7 @@ Pedido do owner: estudar tudo, ser adversário, escrever testes de propriedade/f
 - `src/__tests__/public-edges.test.ts` — todos os métodos públicos com bordas pedidas (null/undefined, IN vazio, Date/BigInt/Buffer/JSON, reserved words, unicode, whereGroup, joins+alias, subquery, upsert, paginação, tx rollback, concorrência, increment NaN, `insert().all()`, FIND_IN_SET, JSON contains).
 - Integração Postgres 16 + MySQL 8 **só em banco throwaway no loopback** (`127.0.0.1`). Cada suite cria `qk_e_<pid>_<rand>` e dá `DROP DATABASE` no `afterAll`. `POSTGRES_HOST` / `DATABASE_URL` / credenciais de ambiente são **ignorados**. Host que não seja loopback lança. CI usa service containers efêmeros; local: `docker-compose.test.yml` (tmpfs) ou o cluster de teste iniciado nesta VM.
 
-**Suite desta rodada:** 354 passou / 0 pulados. Typecheck strict passou. Postgres e MySQL live passaram.
+**Suite desta rodada (remeida agora):** 358 passou / 0 pulados. Cobertura **83,09%** linhas / **82,55%** branches / **84,41%** funções. Typecheck strict passou. Postgres e MySQL live passaram (somente `127.0.0.1`, `qk_e_*` dropado).
 
 Não publicamos no npm.
 

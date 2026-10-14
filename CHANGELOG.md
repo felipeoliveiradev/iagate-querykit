@@ -61,7 +61,7 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - Fuzzy-search score placeholders are real bindings (`selectBindings`), not a leftover `pendingAction`.
 - `pluck` / `pluckSync` clone first; `scalar()` is async; `run()` refuses pending writes.
 - `BaseDatabaseAdapter.backup/restore/getConnectionInfo` throw instead of silently succeeding.
-- See `STUDY.md` for architecture, coverage (78.77% lines), and measured benchmarks.
+- See `STUDY.md` for architecture, coverage (83.09% lines), and measured benchmarks.
 
 ### Adversarial hardening (same 1.0.0, unpublished)
 
