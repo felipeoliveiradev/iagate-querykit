@@ -1,7 +1,8 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
-import { toMssqlParams } from '../sql/placeholders.js';
 import { asWrite, loadOptionalPeer } from './shared.js';
 import { runNestedSavepoint } from './savepoints.js';
+import { mapBindings, runDriver, toNativeSql } from './driver-wrap.js';
+import { hydrateRows } from '../engine/hydrate.js';
 
 let mssql: any;
 function ensureMssql() {
@@ -20,7 +21,7 @@ export type SqlServerExecutorConfig = {
 };
 
 function mapMssql(res: any): QueryResult {
-  const rows = res?.recordset || [];
+  const rows = hydrateRows(res?.recordset || []);
   const affectedRows = Array.isArray(res?.rowsAffected)
     ? res.rowsAffected.reduce((a: number, b: number) => a + b, 0)
     : res?.rowsAffected;
@@ -64,11 +65,13 @@ export class SqlServerExecutor implements DatabaseExecutor {
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
-    const pool = await this.poolPromise;
-    const { sql: text, paramNames } = toMssqlParams(sql);
-    const request = bindRequest(pool, paramNames, bindings);
-    const res = await request.query(text);
-    return mapMssql(res);
+    return runDriver(this.dialect, sql, bindings, async () => {
+      const pool = await this.poolPromise;
+      const { sql: text, paramNames } = toNativeSql(this.dialect, sql);
+      const request = bindRequest(pool, paramNames || [], mapBindings(this.dialect, bindings));
+      const res = await request.query(text);
+      return mapMssql(res);
+    });
   }
 
   async run(sql: string, bindings: any[] = []): Promise<WriteResult> {
@@ -79,14 +82,16 @@ export class SqlServerExecutor implements DatabaseExecutor {
     const pool = await this.poolPromise;
     const transaction = new mssql.Transaction(pool);
     await transaction.begin();
-    const execOnTx = async (sql: string, bindings: any[] = []) => {
-      const { sql: text, paramNames } = toMssqlParams(sql);
-      const request = new mssql.Request(transaction);
-      paramNames.forEach((name, idx) => {
-        request.input(name, bindings[idx]);
+    const execOnTx = async (sql: string, bindings: any[] = []) =>
+      runDriver('mssql', sql, bindings, async () => {
+        const { sql: text, paramNames } = toNativeSql('mssql', sql);
+        const request = new mssql.Request(transaction);
+        const values = mapBindings('mssql', bindings);
+        (paramNames || []).forEach((name, idx) => {
+          request.input(name, values[idx]);
+        });
+        return mapMssql(await request.query(text));
       });
-      return mapMssql(await request.query(text));
-    };
     const makeTx = (depth: number): DatabaseExecutor => {
       const tx: DatabaseExecutor = {
         dialect: 'mssql',

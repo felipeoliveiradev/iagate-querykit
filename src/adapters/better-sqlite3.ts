@@ -1,6 +1,8 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { isSelectLike } from '../sql/dialect.js';
 import { loadOptionalPeer } from './shared.js';
+import { hydrateRows, hydrateInteger } from '../engine/hydrate.js';
+import { runDriver, runDriverSync } from './driver-wrap.js';
 
 export type BetterSqlite3Database = any;
 
@@ -37,7 +39,7 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
     } catch {
       /* older mocks */
     }
-    if (options?.safeIntegers === true && typeof this.db.defaultSafeIntegers === 'function') {
+    if (options?.safeIntegers !== false && typeof this.db.defaultSafeIntegers === 'function') {
       try {
         this.db.defaultSafeIntegers(true);
       } catch {
@@ -66,23 +68,34 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
   }
 
   executeQuerySync(sql: string, bindings: any[] = []): QueryResult {
-    const stmt = this.db.prepare(sql);
-    if (isSelectLike(sql) || (typeof stmt.reader === 'boolean' && stmt.reader)) {
-      const data = stmt.all(...bindings);
-      return { data };
-    }
-    const info = stmt.run(...bindings);
-    return { data: [], affectedRows: info.changes, lastInsertId: info.lastInsertRowid };
+    return runDriverSync(this.dialect, sql, bindings, () => {
+      const stmt = this.db.prepare(sql);
+      if (isSelectLike(sql) || (typeof stmt.reader === 'boolean' && stmt.reader)) {
+        const data = hydrateRows(stmt.all(...bindings));
+        return { data };
+      }
+      const info = stmt.run(...bindings);
+      return {
+        data: [],
+        affectedRows: info.changes,
+        lastInsertId: hydrateInteger(info.lastInsertRowid) as number | bigint,
+      };
+    });
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
-    return this.executeQuerySync(sql, bindings);
+    return runDriver(this.dialect, sql, bindings, () => this.executeQuerySync(sql, bindings));
   }
 
   runSync(sql: string, bindings: any[] = []): WriteResult {
-    const stmt = this.db.prepare(sql);
-    const info = stmt.run(...bindings);
-    return { changes: info.changes, lastInsertRowid: info.lastInsertRowid };
+    return runDriverSync(this.dialect, sql, bindings, () => {
+      const stmt = this.db.prepare(sql);
+      const info = stmt.run(...bindings);
+      return {
+        changes: info.changes,
+        lastInsertRowid: hydrateInteger(info.lastInsertRowid) as number | bigint,
+      };
+    });
   }
 
   async run(sql: string, bindings: any[] = []): Promise<WriteResult> {

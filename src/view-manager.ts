@@ -6,6 +6,9 @@ import { quoteIdent } from './sql/identifiers.js';
 import { inlineBindings } from './sql/literals.js';
 import type { DatabaseExecutor } from './types.js';
 import type { SqlDialect } from './sql/dialect.js';
+import { tryGetDialect } from './engine/registry.js';
+import { fallbackCatalogs } from './dialects/define.js';
+import './dialects/register.js';
 
 /**
  * Retorna queries específicas para listar views baseado no dialeto SQL.
@@ -26,21 +29,9 @@ import type { SqlDialect } from './sql/dialect.js';
  * ```
  */
 function namesByDialect(dialect?: string) {
-  switch (dialect) {
-    case 'sqlite': return [{ sql: "SELECT name FROM sqlite_master WHERE type='view'", map: (r: any) => r.name }];
-    case 'mysql': return [{ sql: "SHOW FULL TABLES WHERE TABLE_TYPE = 'VIEW'", map: (r: any) => Object.values(r)[0] as string }];
-    case 'postgres': return [{ sql: "SELECT table_name FROM information_schema.views WHERE table_schema = current_schema()", map: (r: any) => r.table_name }];
-    case 'mssql': return [{ sql: "SELECT name FROM sys.views", map: (r: any) => r.name }];
-    case 'oracle': return [{ sql: "SELECT VIEW_NAME AS name FROM USER_VIEWS", map: (r: any) => r.name }];
-    default:
-      return [
-        { sql: "SELECT name FROM sqlite_master WHERE type='view'", map: (r: any) => r.name },
-        { sql: "SHOW FULL TABLES WHERE TABLE_TYPE = 'VIEW'", map: (r: any) => Object.values(r)[0] as string },
-        { sql: "SELECT table_name FROM information_schema.views WHERE table_schema = current_schema()", map: (r: any) => r.table_name },
-        { sql: "SELECT name FROM sys.views", map: (r: any) => r.name },
-        { sql: "SELECT VIEW_NAME AS name FROM USER_VIEWS", map: (r: any) => r.name },
-      ];
-  }
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.listViewsQueries();
+  return fallbackCatalogs().views;
 }
 
 /**
@@ -71,12 +62,10 @@ function dialectOf(exec: DatabaseExecutor): SqlDialect {
   return exec.dialect || QueryKitConfig.defaultDialect || 'sqlite';
 }
 
-function dropViewSql(viewName: string, dialect: SqlDialect): string {
-  const ident = quoteIdent(viewName, dialect);
-  if (dialect === 'oracle') {
-    return `BEGIN EXECUTE IMMEDIATE 'DROP VIEW ${ident}'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;`;
-  }
-  return `DROP VIEW IF EXISTS ${ident}`;
+function dropViewSql(viewName: string, dialect: SqlDialect | string): string {
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.dropViewSql(viewName);
+  return `DROP VIEW IF EXISTS ${quoteIdent(viewName, (dialect as SqlDialect) || 'sqlite')}`;
 }
 
 /**
@@ -229,7 +218,7 @@ export class ViewManager {
       try {
         const res = exec.executeQuerySync(c.sql, []);
         const rows = (res?.data as any[]) || [];
-        const names = rows.map(c.map).filter(Boolean);
+        const names = rows.map(c.map).filter((n): n is string => Boolean(n));
         return names;
       } catch {}
     }
@@ -283,7 +272,7 @@ export class ViewManager {
       try {
         const res = await exec.executeQuery(c.sql, []);
         const rows = (res?.data as any[]) || [];
-        const names = rows.map(c.map).filter(Boolean);
+        const names = rows.map(c.map).filter((n): n is string => Boolean(n));
         return names;
       } catch {}
     }

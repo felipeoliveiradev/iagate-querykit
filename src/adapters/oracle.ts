@@ -1,7 +1,8 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
-import { toOracleParams } from '../sql/placeholders.js';
 import { asWrite, loadOptionalPeer } from './shared.js';
 import { runNestedSavepoint } from './savepoints.js';
+import { mapBindings, runDriver, toNativeSql } from './driver-wrap.js';
+import { hydrateRows } from '../engine/hydrate.js';
 
 let oracledb: any;
 function ensureOracle() {
@@ -19,7 +20,7 @@ export type OracleExecutorConfig = {
 };
 
 function mapOracle(res: any): QueryResult {
-  const rows = res?.rows || [];
+  const rows = hydrateRows(res?.rows || []);
   return {
     data: rows,
     affectedRows: res?.rowsAffected,
@@ -54,22 +55,24 @@ export class OracleExecutor implements DatabaseExecutor {
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
-    const pool = await this.getPool();
-    const conn = await pool.getConnection();
-    try {
-      const text = toOracleParams(sql);
-      const res = await conn.execute(text, bindings, {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-        autoCommit: true,
-      });
-      return mapOracle(res);
-    } finally {
+    return runDriver(this.dialect, sql, bindings, async () => {
+      const pool = await this.getPool();
+      const conn = await pool.getConnection();
       try {
-        await conn.close();
-      } catch {
-        /* ignore */
+        const { sql: text } = toNativeSql(this.dialect, sql);
+        const res = await conn.execute(text, mapBindings(this.dialect, bindings), {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+          autoCommit: true,
+        });
+        return mapOracle(res);
+      } finally {
+        try {
+          await conn.close();
+        } catch {
+          /* ignore */
+        }
       }
-    }
+    });
   }
 
   async run(sql: string, bindings: any[] = []): Promise<WriteResult> {
@@ -82,14 +85,15 @@ export class OracleExecutor implements DatabaseExecutor {
     const makeTx = (depth: number): DatabaseExecutor => {
       const tx: DatabaseExecutor = {
         dialect: 'oracle',
-        executeQuery: async (sql: string, bindings: any[] = []) => {
-          const text = toOracleParams(sql);
-          const res = await conn.execute(text, bindings, {
-            outFormat: oracledb.OUT_FORMAT_OBJECT,
-            autoCommit: false,
-          });
-          return mapOracle(res);
-        },
+        executeQuery: async (sql: string, bindings: any[] = []) =>
+          runDriver('oracle', sql, bindings, async () => {
+            const { sql: text } = toNativeSql('oracle', sql);
+            const res = await conn.execute(text, mapBindings('oracle', bindings), {
+              outFormat: oracledb.OUT_FORMAT_OBJECT,
+              autoCommit: false,
+            });
+            return mapOracle(res);
+          }),
         run: async (sql: string, bindings: any[] = []) =>
           asWrite(await tx.executeQuery(sql, bindings)),
         transaction: (inner) =>

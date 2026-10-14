@@ -27,6 +27,13 @@ const entry = {
   'adapters/postgresql': 'src/adapters/postgresql.ts',
   'adapters/oracle': 'src/adapters/oracle.ts',
   'adapters/sqlserver': 'src/adapters/sqlserver.ts',
+  engine: 'src/engine/index.ts',
+  sqlite: 'src/sqlite.ts',
+  postgres: 'src/postgres.ts',
+  mysql: 'src/mysql.ts',
+  oracle: 'src/oracle.ts',
+  mssql: 'src/mssql.ts',
+  memory: 'src/memory.ts',
 };
 
 export default defineConfig({

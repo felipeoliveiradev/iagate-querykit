@@ -102,3 +102,13 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - Live throwaway SQL Server 2022 and Oracle Free 23 ran in this VM (`docker` + `--network host`). Both cannot share the 4 GiB leftover RAM; tests run sequentially.
 - `expectTypeOf` contracts for `QueryBuilder`, `createQueryKit`, adapters, and helpers.
 - Coverage: **95.63% lines / 90.40% branches / 91.76% functions** (464 tests). Packed tarball re-verified.
+
+### Round 5 — dialect plugins, DriverError, FTS fallback, safe BigInt (same 1.0.0, unpublished)
+
+- Core no longer switches on a dialect name. SQL shape lives on a `Dialect` plugin (`registerDialect` / `getDialect`). First-party engines: `sqlite`, `postgres`, `mysql`, `oracle`, `mssql`, plus example `memory`.
+- `createQueryKit({ dialect, driver })` constructor injection. Subpath exports: `iagate-querykit/{sqlite,postgres,mysql,oracle,mssql,memory,engine}`.
+- Shared `runDialectConformance(adapter)` plus `ADDING_A_DATABASE.md`.
+- Every adapter wraps native throws as `DriverError` (`cause`, normalized `driverCode`, `sql`, redacted `params`).
+- SQLite FTS: `whereFullText(..., { mode: 'match' | 'like' | 'auto' })`. `auto` (default) retries with `LIKE` when no virtual table exists.
+- `BetterSqlite3Executor` enables safe integers by default; values inside `MAX_SAFE_INTEGER` hydrate to `number`.
+- `UnsupportedFeatureError` for optional capabilities (example: `memory` regex).

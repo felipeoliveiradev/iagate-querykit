@@ -136,9 +136,9 @@ Black-box of **published 0.1.46** (see §10) confirmed P1–P3 and the identifie
 
 None of the audit items above are left open. Out of scope on purpose:
 
-- **Oracle / SQL Server live integration** — no Docker daemon in this VM (`which docker` is empty), so `gvenzl/oracle-free` and `mcr.microsoft.com/mssql/server` were not started. Dialect SQL is snapshot-tested (`src/__tests__/dialect-sql-snapshots.test.ts`) and adapters are exercised with in-process pool mocks (tx commit/rollback/close). Live integration covers SQLite `:memory:` always, and throwaway Postgres 16 + MySQL 8 on `127.0.0.1` only.
-- **Full-text / geo helpers** are still best-effort dialect SQL (not a search engine). They now quote identifiers, bind values, and have live round-trips on throwaway SQLite / Postgres / MySQL. SQLite FTS is LIKE, not FTS5.
 - **Semantic triggers that emit arbitrary SQL strings** are still raw SQL by design (same as `whereRaw`).
+- **Full-text / geo helpers** remain dialect SQL (not a search engine). SQLite FTS5 `MATCH` is the default; `mode: 'like'` or `mode: 'auto'` (LIKE fallback when no virtual table) is documented.
+- Oracle / SQL Server live coverage is in place against throwaway Docker engines on `127.0.0.1` (Round 4). They still run sequentially (~2 GiB each).
 
 ---
 
@@ -217,3 +217,18 @@ Re-verified this round: same six PASS rows. Local suite: **464 passed / 0 skippe
 | R4-11 | Info | Oracle/SQL Server had never been executed live in this VM. | FIXED (Docker + host network; sequential) | `src/__tests__/integration/mssql.test.ts`, `oracle.test.ts` |
 
 Hard rule: every live engine was `127.0.0.1` only. Ephemeral `qk_e_*` databases were dropped (0 leftovers). Ambient `DATABASE_URL` / `POSTGRES_*` / `MYSQL_*` ignored. Not published.
+
+---
+
+## 14. Round 5 findings (DI/DIP dialects, DriverError, FTS fallback, BigInt)
+
+| ID | Severity | Finding | Status | Covering test |
+| --- | --- | --- | --- | --- |
+| R5-1 | High | Core still `switch(dialect)` / `if (dialect === 'x')` for paging, FTS, JSON, regex, triggers, migrations. Adding a DB required editing QueryBuilder. | FIXED (`Dialect` plugin + `registerDialect`) | `src/__tests__/dialect-conformance.test.ts` |
+| R5-2 | High | Driver exceptions leaked as raw `Error` (no `cause`, no SQL, params in the clear). | FIXED (`DriverError` wrap, redacted params) | same |
+| R5-3 | High | SQLite `whereFullText` required an FTS5 virtual table; regular tables failed with no documented escape. | FIXED (`mode: 'like' \| 'match' \| 'auto'`) | same + `fts5.test.ts` |
+| R5-4 | Medium | Big-integer precision was opt-in (`safeIntegers: true`); default still lost `2^53+1`. | FIXED (safe-by-default + `hydrateInteger`) | same + `adversarial-round4.test.ts` |
+| R5-5 | Medium | No plugin API / subpath / conformance suite for a sixth engine. | FIXED (`iagate-querykit/{postgres,…,memory,engine}`, `ADDING_A_DATABASE.md`) | `package-manifest.test.ts` |
+| R5-6 | Info | AUDIT §9 still claimed “no Docker / FTS is LIKE” after Round 4. | FIXED (this section) | n/a |
+
+Hard rule unchanged: throwaway loopback only. Not published.

@@ -2,6 +2,8 @@ import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { isSelectLike } from '../sql/dialect.js';
 import { asWrite, loadOptionalPeer } from './shared.js';
 import { runNestedSavepoint } from './savepoints.js';
+import { mapBindings, runDriver } from './driver-wrap.js';
+import { hydrateRows } from '../engine/hydrate.js';
 
 let mysql: any;
 function ensureMysql() {
@@ -30,7 +32,7 @@ function mapMysql(sql: string, rows: any, info: any): QueryResult {
       const looksLikeRows = Array.isArray(rows) && (rows.length === 0 || typeof rows[0] === 'object');
       if (looksLikeRows && (info === undefined || !Array.isArray(info) || isSelectLike(sql))) {
         return {
-          data: rows,
+          data: hydrateRows(rows),
           affectedRows: info?.affectedRows,
           lastInsertId: info?.insertId,
         };
@@ -87,8 +89,10 @@ export class MysqlExecutor implements DatabaseExecutor {
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
-    const [rows, info] = await this.pool.execute(sql, bindings.map(mysqlBind));
-    return mapMysql(sql, rows, info);
+    return runDriver(this.dialect, sql, bindings, async () => {
+      const [rows, info] = await this.pool.execute(sql, mapBindings(this.dialect, bindings));
+      return mapMysql(sql, rows, info);
+    });
   }
 
   async run(sql: string, bindings: any[] = []): Promise<WriteResult> {
@@ -100,10 +104,11 @@ export class MysqlExecutor implements DatabaseExecutor {
     const makeTx = (depth: number): DatabaseExecutor => {
       const tx: DatabaseExecutor = {
         dialect: 'mysql',
-        executeQuery: async (sql: string, bindings: any[] = []) => {
-          const [rows, info] = await conn.execute(sql, bindings.map(mysqlBind));
-          return mapMysql(sql, rows, info);
-        },
+        executeQuery: async (sql: string, bindings: any[] = []) =>
+          runDriver('mysql', sql, bindings, async () => {
+            const [rows, info] = await conn.execute(sql, mapBindings('mysql', bindings));
+            return mapMysql(sql, rows, info);
+          }),
         run: async (sql: string, bindings: any[] = []) =>
           asWrite(await tx.executeQuery(sql, bindings)),
         transaction: (inner) =>

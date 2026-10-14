@@ -4,19 +4,22 @@ import { simulationManager } from './simulation-manager.js';
 import { eventManager } from './event-manager.js';
 import type { DatabaseExecutor, WriteResult } from './types.js';
 import type { SqlDialect } from './sql/dialect.js';
-import { returningInsertSql } from './sql/dialect.js';
 import { quoteIdent, quoteSelectItem, quoteTableRef, isSqlExpression } from './sql/identifiers.js';
 import { compileSelect, compileWhere, combineWhere, type CompileState } from './sql/compile.js';
 import { normalizeBinding, normalizeBindings } from './sql/bindings.js';
-import { maxBindParams, chunkRowsByBindLimit } from './sql/bind-limits.js';
-import { fts5MatchQuery } from './sql/fts5.js';
+import { chunkRowsByBindLimit } from './sql/bind-limits.js';
 import { InsertError } from './sql/errors.js';
 import { attachRelations } from './relations-resolver.js';
+import type { Dialect, FullTextMode, FullTextOptions } from './engine/dialect.js';
+import { resolveEngine } from './engine/resolve.js';
+import './dialects/register.js';
 
 export type QueryBuilderOptions = {
   executor?: DatabaseExecutor;
   /** Override the dialect bind-parameter ceiling used to chunk multi-row inserts. */
   maxBindings?: number;
+  /** Inject a dialect plugin (name or instance). Core never switches on the name. */
+  dialect?: Dialect | string;
 };
 
 /**
@@ -131,6 +134,9 @@ export class QueryBuilder<T = any> {
   private virtualTable: T[] = [];
   private includeAllRelations: boolean | RelationshipSelector<T> = false
   private bindParamLimit?: number;
+  private boundDialect?: Dialect | string;
+  private ftsMode?: FullTextMode;
+  private ftsLike?: { columns: string[]; query: string };
 
   /**
    * Construtor da classe QueryBuilder.
@@ -153,6 +159,7 @@ export class QueryBuilder<T = any> {
   constructor(tableName: string, options?: QueryBuilderOptions) {
     this.tableName = tableName;
     this.boundExecutor = options?.executor;
+    this.boundDialect = options?.dialect;
     if (options?.maxBindings != null) this.maxBindings(options.maxBindings);
   }
 
@@ -175,10 +182,40 @@ export class QueryBuilder<T = any> {
   }
 
   private dialect(): SqlDialect {
+    if (this.boundDialect && typeof this.boundDialect === 'object') {
+      return this.boundDialect.name as SqlDialect;
+    }
+    if (typeof this.boundDialect === 'string') return this.boundDialect as SqlDialect;
     try {
       return resolveDialect(this.boundExecutor ?? this.executor());
     } catch {
       return resolveDialect(this.boundExecutor || QueryKitConfig.defaultExecutor);
+    }
+  }
+
+  private dialectEngine(): Dialect {
+    if (this.boundDialect && typeof this.boundDialect === 'object') return this.boundDialect;
+    return resolveEngine(typeof this.boundDialect === 'string' ? this.boundDialect : this.dialect());
+  }
+
+  private isFtsMatchFailure(err: unknown): boolean {
+    if (this.ftsMode !== 'auto' || !this.ftsLike) return false;
+    const msg = err instanceof Error ? err.message : String(err);
+    return /no such (table|module)|unable to use function MATCH|fts5|not a fts/i.test(msg);
+  }
+
+  private rewriteFullTextLike(): void {
+    if (!this.ftsLike) return;
+    const engine = this.dialectEngine();
+    const cols = this.ftsLike.columns.map((c) => this.qIdent(c));
+    const frag = engine.fullText(this.qTable(), cols, this.ftsLike.columns, this.ftsLike.query, {
+      mode: 'like',
+    });
+    for (const clause of this.whereClauses) {
+      if (clause.type === 'raw' && clause.sql && /MATCH/i.test(clause.sql)) {
+        clause.sql = frag.sql;
+        clause.value = frag.bindings;
+      }
     }
   }
 
@@ -772,7 +809,7 @@ export class QueryBuilder<T = any> {
   }
 
   whereGroup(callback: (qb: QueryBuilder<T>) => void, logical: 'AND' | 'OR' = 'AND'): this {
-    const inner = new QueryBuilder<T>(this.tableName, { executor: this.boundExecutor });
+    const inner = new QueryBuilder<T>(this.tableName, { executor: this.boundExecutor, dialect: this.boundDialect });
     callback(inner);
     const { sql, bindings } = inner.whereSql();
     if (!sql) return this;
@@ -4639,25 +4676,19 @@ export class QueryBuilder<T = any> {
    */
   private async listColumnNames(): Promise<string[]> {
     const exec = this.executor();
-    const dialect = exec.dialect;
     const table = this.tableName.split(/\s+/)[0]!;
-    if (dialect === 'sqlite') {
-      const res = await exec.executeQuery(`PRAGMA table_info(${this.qTable(table)})`, []);
-      return (res.data || []).map((r: any) => r.name).filter(Boolean);
-    }
-    if (dialect === 'mysql') {
-      const res = await exec.executeQuery(`SHOW COLUMNS FROM ${this.qTable(table)}`, []);
-      return (res.data || []).map((r: any) => r.Field || r.field).filter(Boolean);
-    }
-    if (dialect === 'postgres') {
-      const res = await exec.executeQuery(
-        'SELECT column_name FROM information_schema.columns WHERE table_name = ?',
-        [table],
-      );
-      return (res.data || []).map((r: any) => r.column_name).filter(Boolean);
+    const queries = this.dialectEngine().listColumnsQueries(this.qTable(table), table);
+    for (const q of queries) {
+      try {
+        const res = await exec.executeQuery(q.sql, q.bindings || []);
+        const names = ((res.data || []) as any[]).map(q.map).filter((n): n is string => Boolean(n));
+        if (names.length) return names;
+      } catch {
+        /* try next catalog */
+      }
     }
     throw new Error(
-      `selectAllExcept() cannot introspect columns on dialect '${dialect}'. Pass an explicit select([...]) list.`,
+      `selectAllExcept() cannot introspect columns on dialect '${this.dialectEngine().name}'. Pass an explicit select([...]) list.`,
     );
   }
 
@@ -4693,7 +4724,15 @@ export class QueryBuilder<T = any> {
     const { sql, bindings } = this.toSql();
     const qbHelper = <X = any>(t?: string) => new QueryBuilder<X>(t || this.tableName);
     eventManager.emit(`querykit:trigger:BEFORE:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'BEFORE', where: undefined, qb: qbHelper } as any);
-    const res = await exec.executeQuery(sql, bindings);
+    let res;
+    try {
+      res = await exec.executeQuery(sql, bindings);
+    } catch (err) {
+      if (!this.isFtsMatchFailure(err)) throw err;
+      this.rewriteFullTextLike();
+      const retry = this.toSql();
+      res = await exec.executeQuery(retry.sql, retry.bindings);
+    }
     let rows = res.data as U[];
     eventManager.emit(`querykit:trigger:AFTER:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'AFTER', rows, qb: qbHelper } as any);
     if (!this.includeAllRelations) return rows;
@@ -4880,13 +4919,21 @@ export class QueryBuilder<T = any> {
     this.assertNoPendingWrite('allSync');
     if (this.excludeSelectColumns.length && this.selectColumns.length === 1 && this.selectColumns[0] === '*') {
       const exec0 = this.executor();
-      if (exec0.executeQuerySync && exec0.dialect === 'sqlite') {
+      if (exec0.executeQuerySync) {
         const table = this.tableName.split(/\s+/)[0]!;
-        const info = exec0.executeQuerySync(`PRAGMA table_info(${this.qTable(table)})`, []);
-        const names = (info.data || []).map((r: any) => r.name).filter(Boolean);
-        if (names.length) {
-          const exclude = new Set(this.excludeSelectColumns);
-          this.selectColumns = names.filter((n: string) => !exclude.has(n));
+        const queries = this.dialectEngine().listColumnsQueries(this.qTable(table), table);
+        for (const q of queries) {
+          try {
+            const info = exec0.executeQuerySync(q.sql, q.bindings || []);
+            const names = (info.data || []).map(q.map).filter((n): n is string => Boolean(n));
+            if (names.length) {
+              const exclude = new Set(this.excludeSelectColumns);
+              this.selectColumns = names.filter((n: string) => !exclude.has(n));
+              break;
+            }
+          } catch {
+            /* try next catalog */
+          }
         }
       }
     }
@@ -4895,7 +4942,15 @@ export class QueryBuilder<T = any> {
     const { sql, bindings } = this.toSql();
     const qbHelper = <X = any>(t?: string) => new QueryBuilder<X>(t || this.tableName);
     eventManager.emit(`querykit:trigger:BEFORE:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'BEFORE', where: undefined, qb: qbHelper } as any);
-    const out = exec.executeQuerySync(sql, bindings).data as U[];
+    let out: U[];
+    try {
+      out = exec.executeQuerySync(sql, bindings).data as U[];
+    } catch (err) {
+      if (!this.isFtsMatchFailure(err)) throw err;
+      this.rewriteFullTextLike();
+      const retry = this.toSql();
+      out = exec.executeQuerySync(retry.sql, retry.bindings).data as U[];
+    }
     eventManager.emit(`querykit:trigger:AFTER:READ:${this.tableName}`, { table: this.tableName, action: 'READ', timing: 'AFTER', rows: out, qb: qbHelper } as any);
     return out;
   }
@@ -6765,13 +6820,7 @@ export class QueryBuilder<T = any> {
     return this.whereRaw(this.iLikeSql(String(column)), [pattern], 'OR');
   }
   private iLikeSql(column: string): string {
-    const col = this.qIdent(column);
-    const dialect = this.dialect();
-    if (dialect === 'postgres') return `${col} ILIKE ?`;
-    if (dialect === 'mysql') return `${col} LIKE ? COLLATE utf8_general_ci`;
-    if (dialect === 'oracle') return `UPPER(${col}) LIKE UPPER(?)`;
-    if (dialect === 'mssql') return `${col} LIKE ? COLLATE SQL_Latin1_General_CP1_CI_AS`;
-    return `LOWER(${col}) LIKE LOWER(?)`;
+    return this.dialectEngine().iLikeSql(this.qIdent(column));
   }
   /**
    * Adiciona uma cláusula WHERE ILIKE para buscar texto que contenha um termo (case-insensitive).
@@ -7158,8 +7207,7 @@ export class QueryBuilder<T = any> {
     const exec = this.executor();
     if (!this.pendingAction) throw new Error('No pending write action to execute. Call insert(), update(), or delete() before .make()');
     const { type, data } = this.pendingAction;
-    const dialect = this.dialect();
-    const qbHelper = <X = any>(t?: string) => new QueryBuilder<X>(t || this.tableName);
+    const qbHelper = <X = any>(t?: string) => new QueryBuilder<X>(t || this.tableName, { executor: this.boundExecutor, dialect: this.boundDialect });
 
     const runOn = async (target: DatabaseExecutor, sql: string, bindings: any[]) => this.execWrite(target, sql, bindings);
 
@@ -7175,10 +7223,11 @@ export class QueryBuilder<T = any> {
             throw new InsertError('insert() rows must share the same columns');
           }
         }
-        const limit = this.bindParamLimit ?? maxBindParams(dialect);
+        const engine = this.dialectEngine();
+        const limit = this.bindParamLimit ?? engine.maxBindParams;
         if (columns.length > limit) {
           throw new InsertError(
-            `insert() row has ${columns.length} columns, exceeding the ${dialect} bind limit of ${limit}`,
+            `insert() row has ${columns.length} columns, exceeding the ${engine.name} bind limit of ${limit}`,
           );
         }
         const chunks = chunkRowsByBindLimit(rows, columns.length, limit);
@@ -7192,7 +7241,7 @@ export class QueryBuilder<T = any> {
           const placeholders = chunk.map(() => rowPlaceholder).join(', ');
           const values = chunk.flatMap((row) => columns.map((c) => normalizeBinding(row[c])));
           let sql = `INSERT INTO ${this.qTable()} (${quotedCols}) VALUES ${placeholders}`;
-          sql = returningInsertSql(sql, dialect);
+          sql = engine.returningInsertSql(sql);
           mapped = await runOn(exec, sql, values);
           changes += Number(mapped.changes ?? 0);
           lastInsertRowid = mapped.lastInsertRowid ?? lastInsertRowid;
@@ -7277,7 +7326,7 @@ export class QueryBuilder<T = any> {
               const vals = Object.values(insertObj).map(normalizeBinding);
               const placeholders = columns.map(() => '?').join(', ');
               let sqlIns = `INSERT INTO ${this.qTable()} (${columns.map((c) => this.qIdent(c)).join(', ')}) VALUES (${placeholders})`;
-              sqlIns = returningInsertSql(sqlIns, dialect);
+              sqlIns = this.dialectEngine().returningInsertSql(sqlIns);
               eventManager.emit(`querykit:trigger:BEFORE:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'BEFORE', data: insertObj, where: undefined, qb: qbHelper } as any);
               const mappedIns = await runOn(target, sqlIns, vals);
               eventManager.emit(`querykit:trigger:AFTER:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'AFTER', data: insertObj, result: mappedIns, qb: qbHelper } as any);
@@ -7490,37 +7539,8 @@ export class QueryBuilder<T = any> {
    */
   whereJsonContains(column: keyof T | string, value: any): this {
     this.track('whereJsonContains', { column, value });
-    const dialect = this.executor()?.dialect || this.dialect();
-    const col = this.qIdent(String(column));
-    const jsonText = typeof value === 'string' ? value : JSON.stringify(value);
-    let sql: string;
-    let bind: unknown[] = [jsonText];
-
-    if (dialect === 'postgres') {
-      sql = `${col} @> ?::jsonb`;
-    } else if (dialect === 'mysql') {
-      sql = `JSON_CONTAINS(${col}, ?)`;
-    } else if (dialect === 'oracle') {
-      sql = `JSON_EXISTS(${col}, '$[*]?(@ == $v)' PASSING ? AS "v")`;
-      bind = [typeof value === 'object' ? jsonText : value];
-    } else if (dialect === 'mssql') {
-      sql = `EXISTS (SELECT 1 FROM OPENJSON(${col}) WHERE [value] = ?)`;
-      bind = [typeof value === 'object' ? jsonText : value];
-    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      const keys = Object.keys(value);
-      if (!keys.length) {
-        sql = `json_valid(${col})`;
-        bind = [];
-      } else {
-        sql = keys.map(() => `json_extract(${col}, ?) = ?`).join(' AND ');
-        bind = keys.flatMap((k) => [`$.${k}`, (value as Record<string, unknown>)[k]]);
-      }
-    } else {
-      sql = `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value = ?)`;
-      bind = [Array.isArray(value) ? jsonText : value];
-    }
-
-    this.whereClauses.push({ type: 'raw', sql, logical: 'AND', value: bind });
+    const frag = this.dialectEngine().jsonContains(this.qIdent(String(column)), value);
+    this.whereClauses.push({ type: 'raw', sql: frag.sql, logical: 'AND', value: frag.bindings });
     return this;
   }
 
@@ -7652,37 +7672,32 @@ export class QueryBuilder<T = any> {
    *   }
    * }
    */
-  whereFullText(columns: (keyof T | string)[], query: string, language: string = 'english'): this {
+  whereFullText(
+    columns: (keyof T | string)[],
+    query: string,
+    language: string | FullTextOptions = 'english',
+  ): this {
     this.track('whereFullText', { columns, query, language });
     if (!Array.isArray(columns) || columns.length === 0) {
       throw new Error('whereFullText() requires at least one column');
     }
     if (!query || !String(query).trim()) return this;
 
-    const dialect = this.executor()?.dialect || this.dialect();
-    const cols = columns.map((c) => this.qIdent(String(c)));
-    let sql: string;
-    let values: any[];
-
-    if (dialect === 'postgres') {
-      sql = `to_tsvector(?::regconfig, ${cols.join(" || ' ' || ")}) @@ plainto_tsquery(?::regconfig, ?)`;
-      values = [language, language, query];
-    } else if (dialect === 'mysql') {
-      sql = `MATCH(${cols.join(', ')}) AGAINST(? IN NATURAL LANGUAGE MODE)`;
-      values = [query];
-    } else if (dialect === 'oracle') {
-      sql = `(${cols.map((c) => `CONTAINS(${c}, ?) > 0`).join(' OR ')})`;
-      values = cols.map(() => query);
-    } else if (dialect === 'mssql') {
-      sql = `(${cols.map((c) => `CONTAINS(${c}, ?)`).join(' OR ')})`;
-      values = cols.map(() => query);
-    } else {
-      // SQLite FTS5: MATCH is on the virtual table, with optional column filter.
-      sql = `${this.qTable()} MATCH ?`;
-      values = [fts5MatchQuery(columns.map(String), query)];
+    const opts: FullTextOptions = typeof language === 'string' ? { language } : { ...language };
+    const engine = this.dialectEngine();
+    const mode: FullTextMode =
+      opts.mode || (engine.capabilities.fts5 ? 'auto' : engine.capabilities.fullText === false ? 'like' : 'match');
+    this.ftsMode = mode;
+    const rawCols = columns.map(String);
+    const cols = rawCols.map((c) => this.qIdent(c));
+    if (mode === 'auto' && engine.capabilities.fts5) {
+      this.ftsLike = { columns: rawCols, query };
     }
-
-    this.whereClauses.push({ type: 'raw', sql, logical: 'AND', value: values });
+    const frag = engine.fullText(this.qTable(), cols, rawCols, query, {
+      ...opts,
+      mode: mode === 'auto' ? 'match' : mode,
+    });
+    this.whereClauses.push({ type: 'raw', sql: frag.sql, logical: 'AND', value: frag.bindings });
     return this;
   }
 
@@ -7801,20 +7816,7 @@ export class QueryBuilder<T = any> {
    */
   whereArrayContains(column: keyof T | string, value: any): this {
     this.track('whereArrayContains', { column, value });
-    const dialect = this.executor()?.dialect || this.dialect();
-    const col = this.qIdent(String(column));
-    let sql: string;
-    if (dialect === 'postgres') {
-      sql = `? = ANY(${col})`;
-    } else if (dialect === 'mysql') {
-      sql = `FIND_IN_SET(?, ${col}) > 0`;
-    } else if (dialect === 'oracle') {
-      sql = `? IN (SELECT COLUMN_VALUE FROM TABLE(SYS.ODCIVARCHAR2LIST(${col})))`;
-    } else if (dialect === 'mssql') {
-      sql = `? IN (SELECT value FROM STRING_SPLIT(${col}, ','))`;
-    } else {
-      sql = `(',' || REPLACE(${col}, ' ', '') || ',') LIKE ('%,' || ? || ',%')`;
-    }
+    const sql = this.dialectEngine().arrayContains(this.qIdent(String(column)));
     this.whereClauses.push({ type: 'raw', sql, logical: 'AND', value });
     return this;
   }
@@ -7954,20 +7956,7 @@ export class QueryBuilder<T = any> {
    */
   whereFindInSet(column: keyof T | string, value: any): this {
     this.track('whereFindInSet', { column, value });
-    const dialect = this.executor()?.dialect || this.dialect();
-    const col = this.qIdent(String(column));
-    let sql: string;
-    if (dialect === 'mysql') {
-      sql = `FIND_IN_SET(?, ${col}) > 0`;
-    } else if (dialect === 'postgres') {
-      sql = `? = ANY(string_to_array(${col}, ','))`;
-    } else if (dialect === 'oracle') {
-      sql = `? IN (SELECT COLUMN_VALUE FROM TABLE(SYS.ODCIVARCHAR2LIST(${col})))`;
-    } else if (dialect === 'mssql') {
-      sql = `? IN (SELECT value FROM STRING_SPLIT(${col}, ','))`;
-    } else {
-      sql = `(',' || REPLACE(${col}, ' ', '') || ',') LIKE ('%,' || ? || ',%')`;
-    }
+    const sql = this.dialectEngine().findInSet(this.qIdent(String(column)));
     this.whereClauses.push({ type: 'raw', sql, logical: 'AND', value });
     return this;
   }
@@ -8278,44 +8267,12 @@ export class QueryBuilder<T = any> {
    */
   whereDate(column: keyof T | string, date: Date): this {
     this.track('whereDate', { column, date });
-    
-    // Detecta o executor para usar a sintaxe correta do banco
-    const executor = this.executor();
-    let sql: string;
-    let values: any[];
-    
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-    
-    if (executor?.dialect === 'postgres') {
-      // PostgreSQL - DATE() função para extrair apenas a data
-      sql = `DATE(${String(column)}) = DATE(?)`;
-      values = [date];
-    } else if (executor?.dialect === 'mysql') {
-      // MySQL - DATE() função para extrair apenas a data
-      sql = `DATE(${String(column)}) = DATE(?)`;
-      values = [date];
-    } else if (executor?.dialect === 'oracle') {
-      // Oracle - TRUNC() para truncar para início do dia
-      sql = `TRUNC(${String(column)}) = TRUNC(?)`;
-      values = [date];
-    } else if (executor?.dialect === 'mssql') {
-      // SQL Server - CAST para DATE
-      sql = `CAST(${String(column)} AS DATE) = CAST(? AS DATE)`;
-      values = [date];
-    } else {
-      // Fallback universal - BETWEEN com início e fim do dia
-      sql = `${String(column)} BETWEEN ? AND ?`;
-      values = [startOfDay, endOfDay];
-    }
-    
-    this.whereClauses.push({ 
-      type: 'raw', 
-      sql, 
+    const frag = this.dialectEngine().whereDate(this.qIdent(String(column)), date);
+    this.whereClauses.push({
+      type: 'raw',
+      sql: frag.sql,
       logical: 'AND',
-      value: values
+      value: frag.bindings,
     });
     return this;
   }
@@ -9063,9 +9020,7 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
 
     const latId = this.qIdent(String(latColumn));
     const lngId = this.qIdent(String(lngColumn));
-    const dialect = this.executor()?.dialect || this.dialect();
-    const rad = (expr: string) =>
-      dialect === 'sqlite' ? `(${expr} * 0.017453292519943295)` : `radians(${expr})`;
+    const rad = (expr: string) => this.dialectEngine().radians(expr);
     const distanceExpression =
       `(6371 * acos(cos(${rad('?')}) * cos(${rad(latId)}) * ` +
       `cos(${rad(lngId)} - ${rad('?')}) + ` +
@@ -9157,29 +9112,8 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
   ): this {
     this.track('whereDateRangeTz', { column, startDate, endDate, timezone });
     const col = this.qIdent(String(column));
-    const dialect = this.executor()?.dialect || this.dialect();
-
-    let dateExpression: string;
-    switch (dialect) {
-      case 'mysql':
-        dateExpression = `CONVERT_TZ(${col}, 'UTC', ?) BETWEEN ? AND ?`;
-        break;
-      case 'postgres':
-        dateExpression = `${col} AT TIME ZONE 'UTC' AT TIME ZONE ? BETWEEN ? AND ?`;
-        break;
-      case 'oracle':
-        dateExpression = `FROM_TZ(${col}, 'UTC') AT TIME ZONE ? BETWEEN ? AND ?`;
-        break;
-      case 'mssql':
-        dateExpression = `${col} AT TIME ZONE 'UTC' AT TIME ZONE ? BETWEEN ? AND ?`;
-        break;
-      default:
-        dateExpression = `${col} BETWEEN ? AND ?`;
-        this.whereRaw(dateExpression, [startDate, endDate]);
-        return this;
-    }
-
-    this.whereRaw(dateExpression, [timezone, startDate, endDate]);
+    const frag = this.dialectEngine().whereDateRangeTz(col, startDate, endDate, timezone);
+    this.whereRaw(frag.sql, frag.bindings);
     return this;
   }
   /**
@@ -9284,33 +9218,8 @@ selectAllExcept(excludeColumns: (keyof T | string)[]): this {
   ): this {
     this.track('whereRegex', { column, pattern, flags });
     const col = this.qIdent(String(column));
-    const dialect = this.dialect();
-    const insensitive = String(flags || '').toLowerCase().includes('i');
-    let regexExpression: string;
-    let bind: unknown[] = [pattern];
-
-    switch (dialect) {
-      case 'mysql':
-        regexExpression = insensitive ? `${col} REGEXP ?` : `${col} REGEXP BINARY ?`;
-        break;
-      case 'postgres':
-        regexExpression = insensitive ? `${col} ~* ?` : `${col} ~ ?`;
-        break;
-      case 'oracle':
-        regexExpression = `REGEXP_LIKE(${col}, ?, ?)`;
-        bind = [pattern, flags || 'c'];
-        break;
-      default: {
-        regexExpression = `${col} LIKE ?`;
-        const likePattern = pattern
-          .replace(/^\^/, '')
-          .replace(/\$$/, '')
-          .replace(/[.*+?^${}()|[\]\\]/g, '%');
-        bind = [likePattern.includes('%') ? likePattern : `%${likePattern}%`];
-      }
-    }
-
-    this.whereRaw(regexExpression, bind);
+    const frag = this.dialectEngine().whereRegex(col, pattern, flags);
+    this.whereRaw(frag.sql, frag.bindings);
     return this;
   }
 

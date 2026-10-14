@@ -1,4 +1,6 @@
 import type { SqlDialect } from './dialect.js';
+import { tryGetDialect } from '../engine/registry.js';
+import '../dialects/register.js';
 
 /**
  * Documented per-statement bind-parameter ceilings.
@@ -17,14 +19,16 @@ export const DIALECT_MAX_BIND_PARAMS: Record<SqlDialect, number> = {
 export const SQLITE_MAX_BIND_PARAMS_LEGACY = 999;
 export const SQLITE_MAX_BIND_PARAMS_MODERN = 32766;
 
-export function maxBindParams(dialect: SqlDialect, override?: number): number {
+export function maxBindParams(dialect: SqlDialect | string, override?: number): number {
   if (typeof override === 'number') {
     if (!Number.isInteger(override) || override < 1) {
       throw new Error('maxBindParams override must be a positive integer');
     }
     return override;
   }
-  return DIALECT_MAX_BIND_PARAMS[dialect] ?? 999;
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.maxBindParams;
+  return DIALECT_MAX_BIND_PARAMS[dialect as SqlDialect] ?? 999;
 }
 
 /**

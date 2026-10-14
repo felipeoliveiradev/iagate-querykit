@@ -17,7 +17,7 @@ describe('package manifest (T10, R6, R8, P4, P5)', () => {
   });
 
   it('exports previously missing subpaths', () => {
-    for (const key of ['./adapters', './migration-manager', './migration-dsl', './seed', './relations-resolver', './querykit']) {
+    for (const key of ['./adapters', './migration-manager', './migration-dsl', './seed', './relations-resolver', './querykit', './engine', './sqlite', './postgres', './mysql', './oracle', './mssql', './memory']) {
       expect(pkg.exports[key]).toBeTruthy();
       expect(pkg.exports[key].require.default).toBeTruthy();
       expect(pkg.exports[key].require.types).toMatch(/\.d\.cts$/);

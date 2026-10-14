@@ -1,4 +1,6 @@
 import type { SqlDialect } from '../sql/dialect.js';
+import { tryGetDialect } from '../engine/registry.js';
+import '../dialects/register.js';
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -15,26 +17,29 @@ function assertSp(name: string): string {
 }
 
 /** BEGIN a nested savepoint (outer transaction must already be open). */
-export function beginSavepointSql(dialect: SqlDialect, name: string): string {
+export function beginSavepointSql(dialect: SqlDialect | string, name: string): string {
   const n = assertSp(name);
-  if (dialect === 'mssql') return `SAVE TRANSACTION ${n}`;
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.beginSavepointSql(n);
   return `SAVEPOINT ${n}`;
 }
 
 /** Release is a no-op on MSSQL / Oracle (commit of the outer tx is enough). */
-export function releaseSavepointSql(dialect: SqlDialect, name: string): string | null {
-  if (dialect === 'mssql' || dialect === 'oracle') return null;
+export function releaseSavepointSql(dialect: SqlDialect | string, name: string): string | null {
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.releaseSavepointSql(assertSp(name));
   return `RELEASE SAVEPOINT ${assertSp(name)}`;
 }
 
-export function rollbackSavepointSql(dialect: SqlDialect, name: string): string {
+export function rollbackSavepointSql(dialect: SqlDialect | string, name: string): string {
   const n = assertSp(name);
-  if (dialect === 'mssql') return `ROLLBACK TRANSACTION ${n}`;
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.rollbackSavepointSql(n);
   return `ROLLBACK TO SAVEPOINT ${n}`;
 }
 
 export async function runNestedSavepoint<T>(
-  dialect: SqlDialect,
+  dialect: SqlDialect | string,
   depth: number,
   execSql: (sql: string) => Promise<void> | void,
   fn: () => Promise<T>,

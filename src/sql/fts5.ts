@@ -1,5 +1,23 @@
 import type { DatabaseExecutor } from '../types.js';
-import { quoteIdent, quoteTableRef, isSafeIdent, UnsafeIdentifierError } from './identifiers.js';
+import { UnsafeIdentifierError } from './errors.js';
+import { splitIdent, wrapDouble } from '../engine/idents.js';
+
+function quoteIdent(name: string): string {
+  return splitIdent(name).map(wrapDouble).join('.');
+}
+
+function quoteTableRef(name: string): string {
+  return quoteIdent(name);
+}
+
+function isSafeIdent(name: string): boolean {
+  try {
+    splitIdent(name);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export type Fts5CreateOptions = {
   name: string;
@@ -29,7 +47,7 @@ export function fts5CreateSql(opts: Fts5CreateOptions): string {
   if (!opts?.columns?.length) {
     throw new Error('fts5CreateSql requires at least one column');
   }
-  const name = quoteIdent(assertIdent(opts.name, 'table'), 'sqlite');
+  const name = quoteIdent(assertIdent(opts.name, 'table'));
   const unindexed = new Set((opts.unindexed || []).map((c) => assertIdent(c, 'column')));
   const cols = opts.columns.map((c) => {
     const ident = assertIdent(c, 'column');
@@ -44,12 +62,12 @@ export function fts5CreateSql(opts: Fts5CreateOptions): string {
 }
 
 export function fts5DropSql(name: string): string {
-  return `DROP TABLE IF EXISTS ${quoteIdent(assertIdent(name, 'table'), 'sqlite')}`;
+  return `DROP TABLE IF EXISTS ${quoteIdent(assertIdent(name, 'table'))}`;
 }
 
 /** Rebuild an external-content FTS5 index: `INSERT INTO fts(fts) VALUES('rebuild')`. */
 export function fts5RebuildSql(name: string): string {
-  const q = quoteIdent(assertIdent(name, 'table'), 'sqlite');
+  const q = quoteIdent(assertIdent(name, 'table'));
   return `INSERT INTO ${q}(${q}) VALUES('rebuild')`;
 }
 
@@ -70,7 +88,7 @@ export function fts5MatchSql(
   query: string,
 ): { sql: string; bindings: string[] } {
   return {
-    sql: `${quoteTableRef(assertIdent(table, 'table'), 'sqlite')} MATCH ?`,
+    sql: `${quoteTableRef(assertIdent(table, 'table'))} MATCH ?`,
     bindings: [fts5MatchQuery(columns, query)],
   };
 }
@@ -86,14 +104,14 @@ export function fts5ContentSyncTriggersSql(
   contentRowid = 'rowid',
 ): string[] {
   if (!columns.length) throw new Error('fts5ContentSyncTriggersSql requires at least one column');
-  const fts = quoteIdent(assertIdent(ftsName, 'table'), 'sqlite');
-  const content = quoteIdent(assertIdent(contentTable, 'table'), 'sqlite');
+  const fts = quoteIdent(assertIdent(ftsName, 'table'));
+  const content = quoteIdent(assertIdent(contentTable, 'table'));
   const rowid = assertIdent(contentRowid, 'content_rowid');
-  const cols = columns.map((c) => quoteIdent(assertIdent(c, 'column'), 'sqlite')).join(', ');
-  const newCols = columns.map((c) => `new.${quoteIdent(assertIdent(c, 'column'), 'sqlite')}`).join(', ');
-  const ai = quoteIdent(assertIdent(`${ftsName}_ai`, 'trigger'), 'sqlite');
-  const ad = quoteIdent(assertIdent(`${ftsName}_ad`, 'trigger'), 'sqlite');
-  const au = quoteIdent(assertIdent(`${ftsName}_au`, 'trigger'), 'sqlite');
+  const cols = columns.map((c) => quoteIdent(assertIdent(c, 'column'))).join(', ');
+  const newCols = columns.map((c) => `new.${quoteIdent(assertIdent(c, 'column'))}`).join(', ');
+  const ai = quoteIdent(assertIdent(`${ftsName}_ai`, 'trigger'));
+  const ad = quoteIdent(assertIdent(`${ftsName}_ad`, 'trigger'));
+  const au = quoteIdent(assertIdent(`${ftsName}_au`, 'trigger'));
   return [
     `CREATE TRIGGER IF NOT EXISTS ${ai} AFTER INSERT ON ${content} BEGIN INSERT INTO ${fts}(rowid, ${cols}) VALUES (new.${rowid}, ${newCols}); END`,
     `CREATE TRIGGER IF NOT EXISTS ${ad} AFTER DELETE ON ${content} BEGIN INSERT INTO ${fts}(${fts}, rowid) VALUES ('delete', old.${rowid}); END`,

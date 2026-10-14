@@ -1,7 +1,8 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
-import { toPostgresParams } from '../sql/placeholders.js';
 import { asWrite, loadOptionalPeer } from './shared.js';
 import { runNestedSavepoint } from './savepoints.js';
+import { mapBindings, runDriver, toNativeSql } from './driver-wrap.js';
+import { hydrateRows } from '../engine/hydrate.js';
 
 let pg: any;
 function ensurePg() {
@@ -24,7 +25,7 @@ export type PostgresExecutorConfig = {
 };
 
 function mapResult(res: any): QueryResult {
-  const rows = res?.rows || [];
+  const rows = hydrateRows(res?.rows || []);
   const affectedRows = res?.rowCount;
   let lastInsertId: any;
   if (rows.length && (rows[0].id !== undefined || rows[0].ID !== undefined)) {
@@ -62,9 +63,11 @@ export class PostgresExecutor implements DatabaseExecutor {
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
-    const text = toPostgresParams(sql);
-    const res = await this.pool.query({ text, values: bindings });
-    return mapResult(res);
+    return runDriver(this.dialect, sql, bindings, async () => {
+      const { sql: text } = toNativeSql(this.dialect, sql);
+      const res = await this.pool.query({ text, values: mapBindings(this.dialect, bindings) });
+      return mapResult(res);
+    });
   }
 
   async run(sql: string, bindings: any[] = []): Promise<WriteResult> {
@@ -76,10 +79,11 @@ export class PostgresExecutor implements DatabaseExecutor {
     const makeTx = (depth: number): DatabaseExecutor => {
       const tx: DatabaseExecutor = {
         dialect: 'postgres',
-        executeQuery: async (sql: string, bindings: any[] = []) => {
-          const text = toPostgresParams(sql);
-          return mapResult(await client.query({ text, values: bindings }));
-        },
+        executeQuery: async (sql: string, bindings: any[] = []) =>
+          runDriver(this.dialect, sql, bindings, async () => {
+            const { sql: text } = toNativeSql('postgres', sql);
+            return mapResult(await client.query({ text, values: mapBindings('postgres', bindings) }));
+          }),
         run: async (sql: string, bindings: any[] = []) =>
           asWrite(await tx.executeQuery(sql, bindings)),
         transaction: (inner) =>

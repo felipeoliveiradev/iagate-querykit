@@ -1,45 +1,30 @@
 import type { SqlDialect } from './dialect.js';
-import { QueryKitError } from './errors.js';
+import { UnsafeIdentifierError } from './errors.js';
+import { tryGetDialect } from '../engine/registry.js';
+import { splitIdent, wrapDouble } from '../engine/idents.js';
+import type { Dialect } from '../engine/dialect.js';
+import { isSqlExpression } from '../dialects/quoting.js';
+import '../dialects/register.js';
+
+export { UnsafeIdentifierError };
 
 const IDENT_PART = /^(?:[\p{L}_][\p{L}\p{N}_]*|\*)$/u;
 
-export class UnsafeIdentifierError extends QueryKitError {
-  constructor(message: string) {
-    super(message, 'UNSAFE_IDENTIFIER');
-    this.name = 'UnsafeIdentifierError';
+function resolveQuote(dialect: SqlDialect | Dialect | undefined): Dialect | undefined {
+  if (dialect && typeof dialect === 'object' && typeof (dialect as Dialect).quoteIdent === 'function') {
+    return dialect as Dialect;
   }
-}
-
-function wrapIdent(part: string, dialect: SqlDialect): string {
-  if (part === '*') return '*';
-  switch (dialect) {
-    case 'mysql':
-      return '`' + part.replace(/`/g, '``') + '`';
-    case 'mssql':
-      return '[' + part.replace(/]/g, ']]') + ']';
-    default:
-      return '"' + part.replace(/"/g, '""') + '"';
-  }
-}
-
-function assertPart(part: string, source: string): void {
-  if (!IDENT_PART.test(part)) {
-    throw new UnsafeIdentifierError(
-      `Unsafe SQL identifier '${source}'. Identifiers may only contain letters, numbers, and underscore.`,
-    );
-  }
+  return tryGetDialect((dialect as SqlDialect) || 'sqlite');
 }
 
 /**
  * Quote a single identifier or dotted path (schema.table.column).
  * Rejects anything that is not a safe identifier part.
  */
-export function quoteIdent(name: string, dialect: SqlDialect = 'sqlite'): string {
-  const trimmed = String(name || '').trim();
-  if (!trimmed) throw new UnsafeIdentifierError('Identifier cannot be empty');
-  const parts = trimmed.split('.').map((p) => p.trim());
-  for (const part of parts) assertPart(part, trimmed);
-  return parts.map((p) => wrapIdent(p, dialect)).join('.');
+export function quoteIdent(name: string, dialect: SqlDialect | Dialect = 'sqlite'): string {
+  const plugin = resolveQuote(dialect);
+  if (plugin) return plugin.quoteIdent(name);
+  return splitIdent(name).map(wrapDouble).join('.');
 }
 
 const AS_RE = /^(.+?)\s+as\s+([\p{L}_][\p{L}\p{N}_]*)$/iu;
@@ -48,7 +33,9 @@ const AS_RE = /^(.+?)\s+as\s+([\p{L}_][\p{L}\p{N}_]*)$/iu;
  * Quote a table reference, including optional alias:
  * `users`, `users u`, `users AS u`, `main.users AS u`.
  */
-export function quoteTableRef(ref: string, dialect: SqlDialect = 'sqlite'): string {
+export function quoteTableRef(ref: string, dialect: SqlDialect | Dialect = 'sqlite'): string {
+  const plugin = resolveQuote(dialect);
+  if (plugin) return plugin.quoteTableRef(ref);
   const trimmed = String(ref || '').trim();
   if (!trimmed) throw new UnsafeIdentifierError('Table name cannot be empty');
   const asMatch = trimmed.match(AS_RE);
@@ -62,15 +49,15 @@ export function quoteTableRef(ref: string, dialect: SqlDialect = 'sqlite'): stri
   return quoteIdent(trimmed, dialect);
 }
 
-export function isSqlExpression(sql: string): boolean {
-  return /[(),+\-/*]|case\s|when\s|cast\s|::/i.test(sql);
-}
+export { isSqlExpression };
 
 /**
  * Quote a SELECT item. Expressions (anything with parentheses or operators)
  * are passed through unchanged so `COUNT(id) AS total` keeps working.
  */
-export function quoteSelectItem(item: string, dialect: SqlDialect = 'sqlite'): string {
+export function quoteSelectItem(item: string, dialect: SqlDialect | Dialect = 'sqlite'): string {
+  const plugin = resolveQuote(dialect);
+  if (plugin) return plugin.quoteSelectItem(item);
   const trimmed = String(item || '').trim();
   if (trimmed === '') throw new UnsafeIdentifierError('Identifier cannot be empty');
   if (trimmed === '*') return '*';

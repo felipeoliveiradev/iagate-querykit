@@ -532,6 +532,72 @@ Não publicamos no npm.
 
 ---
 
+## 14. Rodada 5 — inversão de dependência (dialect plugins)
+
+Pedido: (A) `DriverError` em todo throw do driver; FTS5 com fallback LIKE ou opt-in; BigInt seguro por padrão; fechar o que restava no AUDIT. (B) arquitetura para **muitos** bancos futuros: o núcleo só fala com abstrações; um banco novo é um módulo.
+
+### Diagrama
+
+```mermaid
+flowchart TB
+  subgraph app [Aplicação]
+    CK["createQueryKit({ dialect, driver })"]
+  end
+  subgraph core [Núcleo — sem switch dialect]
+    QB[QueryBuilder]
+    COMP[compileSelect / compileWhere]
+    REL[relations / migrations / views / triggers]
+  end
+  subgraph abs [Abstrações]
+    D[Dialect]
+    DR[Driver / DatabaseExecutor]
+    TM[TypeMapper]
+    EM[ErrorMapper]
+  end
+  subgraph plugins [Módulos plugáveis]
+    REG[DialectRegistry]
+    S[sqlite]
+    P[postgres]
+    M[mysql]
+    O[oracle]
+    MS[mssql]
+    MEM[memory / toy / duckdb…]
+  end
+  CK --> QB
+  QB --> COMP
+  QB --> REL
+  QB --> D
+  COMP --> D
+  REL --> D
+  QB --> DR
+  D --> TM
+  D --> EM
+  REG --> D
+  S --> REG
+  P --> REG
+  M --> REG
+  O --> REG
+  MS --> REG
+  MEM --> REG
+  DR --> S
+  DR --> P
+  DR --> M
+  DR --> O
+  DR --> MS
+```
+
+Um adapter novo: `registerDialect(meuDialect)` + `createQueryKit({ dialect, driver })`. Zero edits em `query-builder.ts`. Ver `ADDING_A_DATABASE.md` e `runDialectConformance(adapter)`.
+
+### O que mudou
+
+- `src/engine/dialect.ts` + `registry.ts` + `conformance.ts`.
+- Cinco dialects oficiais + `memory` (exemplo). Subpaths `iagate-querykit/{sqlite,postgres,mysql,oracle,mssql,memory,engine}`.
+- Adapters envolvem exceções em `DriverError` (`cause`, `driverCode`, SQL, params redigidos).
+- FTS: `mode: 'match' | 'like' | 'auto'`. SQLite `auto` tenta MATCH e cai em LIKE se não houver virtual table.
+- `BetterSqlite3Executor` liga `defaultSafeIntegers` por padrão; `hydrateInteger` devolve `number` dentro de `MAX_SAFE_INTEGER`.
+
+---
+
 ## Como reproduzir os números
 
 ```bash

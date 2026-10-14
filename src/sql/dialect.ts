@@ -1,3 +1,6 @@
+import { tryGetDialect } from '../engine/registry.js';
+import '../dialects/register.js';
+
 export type SqlDialect = 'sqlite' | 'mysql' | 'postgres' | 'mssql' | 'oracle';
 
 export const SQL_DIALECTS: readonly SqlDialect[] = ['sqlite', 'mysql', 'postgres', 'mssql', 'oracle'];
@@ -28,60 +31,22 @@ export function isSelectLike(sql: string): boolean {
 
 export function applyPaging(
   sql: string,
-  dialect: SqlDialect,
+  dialect: SqlDialect | string,
   limit: number | undefined,
   offset: number | undefined,
   bindings: unknown[],
 ): string {
-  const hasLimit = typeof limit === 'number';
-  const hasOffset = typeof offset === 'number';
-  if (!hasLimit && !hasOffset) return sql;
-
-  if (dialect === 'mssql' || dialect === 'oracle') {
-    let out = sql;
-    if (!/\border\s+by\b/i.test(out)) {
-      out += dialect === 'mssql' ? ' ORDER BY (SELECT NULL)' : ' ORDER BY 1';
-    }
-    const off = hasOffset ? offset! : 0;
-    const lim = hasLimit ? limit! : 0;
-    if (hasOffset && hasLimit) {
-      out += ' OFFSET ? ROWS FETCH NEXT ? ROWS ONLY';
-      bindings.push(off, lim);
-    } else if (hasOffset) {
-      out += ' OFFSET ? ROWS';
-      bindings.push(off);
-    } else {
-      out += ' OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY';
-      bindings.push(lim);
-    }
-    return out;
-  }
-
-  if (hasLimit) {
-    sql += ' LIMIT ?';
-    bindings.push(limit);
-  } else if (hasOffset && dialect === 'sqlite') {
-    // SQLite rejects OFFSET without LIMIT. LIMIT -1 means "no cap".
-    sql += ' LIMIT -1';
-  } else if (hasOffset && dialect === 'mysql') {
-    // MySQL rejects OFFSET without LIMIT. Max unsigned bigint is the documented workaround.
-    sql += ' LIMIT 18446744073709551615';
-  }
-  if (hasOffset) {
-    sql += ' OFFSET ?';
-    bindings.push(offset);
-  }
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.applyPaging(sql, limit, offset, bindings);
   return sql;
 }
 
-export function returningInsertSql(sql: string, dialect: SqlDialect, primaryKey = 'id'): string {
-  if (!/^\s*insert\b/i.test(sql)) return sql;
-  if (dialect === 'postgres') return `${sql.replace(/;?\s*$/, '')} RETURNING *`;
-  if (dialect === 'mssql' && !/\boutput\b/i.test(sql)) {
-    return sql.replace(/^\s*insert\s+into\s+/i, `INSERT INTO `).replace(
-      /(\)\s*)values\s*/i,
-      `$1 OUTPUT INSERTED.${primaryKey} VALUES `,
-    );
-  }
+export function returningInsertSql(
+  sql: string,
+  dialect: SqlDialect | string,
+  primaryKey = 'id',
+): string {
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.returningInsertSql(sql, primaryKey);
   return sql;
 }

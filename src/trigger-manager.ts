@@ -3,6 +3,9 @@ import { eventManager } from './event-manager.js';
 import { quoteIdent } from './sql/identifiers.js';
 import type { DatabaseExecutor } from './types.js';
 import type { SqlDialect } from './sql/dialect.js';
+import { tryGetDialect } from './engine/registry.js';
+import { fallbackCatalogs } from './dialects/define.js';
+import './dialects/register.js';
 
 function getExec(explicit?: DatabaseExecutor): DatabaseExecutor {
   const exec = explicit || QueryKitConfig.defaultExecutor;
@@ -20,48 +23,22 @@ export function buildCreateTriggerSql(
   timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF',
   event: 'INSERT' | 'UPDATE' | 'DELETE',
   body: string,
-  dialect: SqlDialect,
+  dialect: SqlDialect | string,
 ): string[] {
-  const ident = quoteIdent(name, dialect);
-  const table = quoteIdent(tableName, dialect);
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.createTriggerSql(name, tableName, timing, event, body);
+  const ident = quoteIdent(name, (dialect as SqlDialect) || 'sqlite');
+  const table = quoteIdent(tableName, (dialect as SqlDialect) || 'sqlite');
   const clean = body.trim().replace(/;?\s*$/, '');
-  switch (dialect) {
-    case 'postgres': {
-      const fn = quoteIdent(`querykit_${name}_fn`, dialect);
-      return [
-        `CREATE OR REPLACE FUNCTION ${fn}() RETURNS trigger AS $$ BEGIN ${clean}; IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF; END; $$ LANGUAGE plpgsql`,
-        `DROP TRIGGER IF EXISTS ${ident} ON ${table}`,
-        `CREATE TRIGGER ${ident} ${timing === 'INSTEAD OF' ? 'INSTEAD OF' : timing} ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION ${fn}()`,
-      ];
-    }
-    case 'mysql':
-      return [
-        `CREATE TRIGGER ${ident} ${timing === 'INSTEAD OF' ? 'BEFORE' : timing} ${event} ON ${table} FOR EACH ROW BEGIN ${clean}; END`,
-      ];
-    case 'mssql':
-      return [
-        `CREATE TRIGGER ${ident} ON ${table} ${timing === 'BEFORE' ? 'INSTEAD OF' : 'AFTER'} ${event} AS BEGIN ${clean}; END`,
-      ];
-    case 'oracle':
-      return [
-        `CREATE OR REPLACE TRIGGER ${ident} ${timing === 'INSTEAD OF' ? 'BEFORE' : timing} ${event} ON ${table} FOR EACH ROW BEGIN ${clean}; END;`,
-      ];
-    default:
-      return [
-        `CREATE TRIGGER IF NOT EXISTS ${ident} ${timing} ${event} ON ${table} FOR EACH ROW BEGIN ${clean}; END`,
-      ];
-  }
+  return [
+    `CREATE TRIGGER IF NOT EXISTS ${ident} ${timing} ${event} ON ${table} FOR EACH ROW BEGIN ${clean}; END`,
+  ];
 }
 
-export function buildDropTriggerSql(name: string, dialect: SqlDialect, tableName?: string): string {
-  const ident = quoteIdent(name, dialect);
-  if (dialect === 'postgres' && tableName) {
-    return `DROP TRIGGER IF EXISTS ${ident} ON ${quoteIdent(tableName, dialect)}`;
-  }
-  if (dialect === 'oracle') {
-    return `BEGIN EXECUTE IMMEDIATE 'DROP TRIGGER ${ident}'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -4080 THEN RAISE; END IF; END;`;
-  }
-  return `DROP TRIGGER IF EXISTS ${ident}`;
+export function buildDropTriggerSql(name: string, dialect: SqlDialect | string, tableName?: string): string {
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.dropTriggerSql(name, tableName);
+  return `DROP TRIGGER IF EXISTS ${quoteIdent(name, (dialect as SqlDialect) || 'sqlite')}`;
 }
 
 /**
@@ -589,21 +566,9 @@ export class TriggerManager {
   }
 
   private triggerQueriesByDialect(dialect?: string) {
-    switch (dialect) {
-      case 'sqlite': return [{ sql: "SELECT name FROM sqlite_master WHERE type='trigger'", map: (r: any) => r.name }];
-      case 'mysql': return [{ sql: "SELECT TRIGGER_NAME AS name FROM INFORMATION_SCHEMA.TRIGGERS", map: (r: any) => r.name }];
-      case 'postgres': return [{ sql: "SELECT tgname AS name FROM pg_trigger WHERE NOT tgisinternal", map: (r: any) => r.tgname || r.name }];
-      case 'mssql': return [{ sql: "SELECT name FROM sys.triggers", map: (r: any) => r.name }];
-      case 'oracle': return [{ sql: "SELECT TRIGGER_NAME AS name FROM USER_TRIGGERS", map: (r: any) => r.name }];
-      default:
-        return [
-          { sql: "SELECT name FROM sqlite_master WHERE type='trigger'", map: (r: any) => r.name },
-          { sql: "SELECT TRIGGER_NAME AS name FROM INFORMATION_SCHEMA.TRIGGERS", map: (r: any) => r.name },
-          { sql: "SELECT tgname AS name FROM pg_trigger WHERE NOT tgisinternal", map: (r: any) => r.tgname || r.name },
-          { sql: "SELECT name FROM sys.triggers", map: (r: any) => r.name },
-          { sql: "SELECT TRIGGER_NAME AS name FROM USER_TRIGGERS", map: (r: any) => r.name },
-        ];
-    }
+    const plugin = tryGetDialect(dialect);
+    if (plugin) return plugin.listTriggersQueries();
+    return fallbackCatalogs().triggers;
   }
 
   public listTriggers(): string[] {
@@ -616,7 +581,7 @@ export class TriggerManager {
       try {
         const res = exec.executeQuerySync(c.sql, []);
         const rows = (res?.data as any[]) || [];
-        const names = rows.map(c.map).filter(Boolean);
+        const names = rows.map(c.map).filter((n): n is string => Boolean(n));
         if (known || names.length) return names;
       } catch { /* try next */ }
     }
@@ -638,7 +603,7 @@ export class TriggerManager {
       try {
         const res = await exec.executeQuery(c.sql, []);
         const rows = (res?.data as any[]) || [];
-        const names = rows.map(c.map).filter(Boolean);
+        const names = rows.map(c.map).filter((n): n is string => Boolean(n));
         if (known || names.length) return names;
       } catch { /* try next */ }
     }
