@@ -1,4 +1,4 @@
-import { QueryBuilder } from './query-builder';
+import { QueryBuilder } from './query-builder.js';
 
 /**
  * Executa múltiplas queries em paralelo para melhor performance.
@@ -25,8 +25,9 @@ import { QueryBuilder } from './query-builder';
  */
 export async function parallel(...queries: QueryBuilder<any>[]): Promise<any[]> {
   const promises = queries.map(async (query) => {
-    if ((query as any).hasPendingWrite && (query as any).hasPendingWrite()) return query.make();
-    return query.all();
+    const isolated = query.clone();
+    if (isolated.hasPendingWrite()) return isolated.make();
+    return isolated.all();
   });
   return Promise.all(promises);
 } 

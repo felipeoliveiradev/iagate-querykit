@@ -1,7 +1,14 @@
-import { QueryKitConfig } from './config';
-import type { QueryBuilder } from './query-builder';
-import { scheduler } from './scheduler';
-import { table } from './table';
+import { QueryKitConfig } from './config.js';
+import type { QueryBuilder } from './query-builder.js';
+import { scheduler } from './scheduler.js';
+import { table } from './table.js';
+import { quoteIdent } from './sql/identifiers.js';
+import { inlineBindings } from './sql/literals.js';
+import type { DatabaseExecutor } from './types.js';
+import type { SqlDialect } from './sql/dialect.js';
+import { tryGetDialect } from './engine/registry.js';
+import { fallbackCatalogs } from './dialects/define.js';
+import './dialects/register.js';
 
 /**
  * Retorna queries específicas para listar views baseado no dialeto SQL.
@@ -22,21 +29,9 @@ import { table } from './table';
  * ```
  */
 function namesByDialect(dialect?: string) {
-  switch (dialect) {
-    case 'sqlite': return [{ sql: "SELECT name FROM sqlite_master WHERE type='view'", map: (r: any) => r.name }];
-    case 'mysql': return [{ sql: "SHOW FULL TABLES WHERE TABLE_TYPE = 'VIEW'", map: (r: any) => Object.values(r)[0] as string }];
-    case 'postgres': return [{ sql: "SELECT table_name FROM information_schema.views WHERE table_schema = current_schema()", map: (r: any) => r.table_name }];
-    case 'mssql': return [{ sql: "SELECT name FROM sys.views", map: (r: any) => r.name }];
-    case 'oracle': return [{ sql: "SELECT VIEW_NAME AS name FROM USER_VIEWS", map: (r: any) => r.name }];
-    default:
-      return [
-        { sql: "SELECT name FROM sqlite_master WHERE type='view'", map: (r: any) => r.name },
-        { sql: "SHOW FULL TABLES WHERE TABLE_TYPE = 'VIEW'", map: (r: any) => Object.values(r)[0] as string },
-        { sql: "SELECT table_name FROM information_schema.views WHERE table_schema = current_schema()", map: (r: any) => r.table_name },
-        { sql: "SELECT name FROM sys.views", map: (r: any) => r.name },
-        { sql: "SELECT VIEW_NAME AS name FROM USER_VIEWS", map: (r: any) => r.name },
-      ];
-  }
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.listViewsQueries();
+  return fallbackCatalogs().views;
 }
 
 /**
@@ -57,45 +52,20 @@ function namesByDialect(dialect?: string) {
  * // Output: ['NULL', '42', "'John''s data'", '1', "'2024-01-01T00:00:00.000Z'"]
  * ```
  */
-function escapeSqlLiteral(value: any): string {
-  if (value === null || value === undefined) return 'NULL';
-  if (typeof value === 'number' && isFinite(value)) return String(value);
-  if (typeof value === 'bigint') return String(value);
-  if (typeof value === 'boolean') return value ? '1' : '0';
-  if (value instanceof Date) return `'${value.toISOString().replace(/'/g, "''")}'`;
-  if (Buffer && Buffer.isBuffer && Buffer.isBuffer(value)) return `X'${value.toString('hex')}'`;
-  if (typeof value === 'object') return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
-  return `'${String(value).replace(/'/g, "''")}'`;
+function getExec(explicit?: DatabaseExecutor): DatabaseExecutor {
+  const exec = explicit || QueryKitConfig.defaultExecutor;
+  if (!exec) throw new Error('No executor configured for QueryKit');
+  return exec;
 }
 
-/**
- * Substitui placeholders (?) em SQL por valores literais escapados.
- * Útil para debug e logging de queries com bindings.
- * 
- * @param sql - Query SQL com placeholders
- * @param bindings - Array de valores para substituir os placeholders
- * @returns SQL com valores inline substituindo os placeholders
- * 
- * @example
- * ```typescript
- * // Dados iniciais
- * const sql = 'SELECT * FROM users WHERE age > ? AND name LIKE ?';
- * const bindings = [18, '%John%'];
- * 
- * // Como usar
- * const inlined = inlineBindings(sql, bindings);
- * 
- * // Output: "SELECT * FROM users WHERE age > 18 AND name LIKE '%John%'"
- * ```
- */
-function inlineBindings(sql: string, bindings: any[]): string {
-  if (!bindings || bindings.length === 0) return sql;
-  let i = 0;
-  return sql.replace(/\?/g, () => {
-    if (i >= bindings.length) return '?';
-    const lit = escapeSqlLiteral(bindings[i++]);
-    return lit;
-  });
+function dialectOf(exec: DatabaseExecutor): SqlDialect {
+  return exec.dialect || QueryKitConfig.defaultDialect || 'sqlite';
+}
+
+function dropViewSql(viewName: string, dialect: SqlDialect | string): string {
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.dropViewSql(viewName);
+  return `DROP VIEW IF EXISTS ${quoteIdent(viewName, (dialect as SqlDialect) || 'sqlite')}`;
 }
 
 /**
@@ -139,14 +109,15 @@ export class ViewManager {
    * // Output: View 'electronics_products' criada com produtos da categoria electronics
    * ```
    */
-  public async createOrReplaceView(viewName: string, query: QueryBuilder<any>): Promise<void> {
+  public async createOrReplaceView(viewName: string, query: QueryBuilder<any>, executor?: DatabaseExecutor): Promise<void> {
+    const exec = getExec(executor);
+    const dialect = dialectOf(exec);
     const { sql, bindings } = query.toSql();
-    await this.dropView(viewName);
+    await this.dropView(viewName, exec);
     const inlined = inlineBindings(sql, bindings);
-    const createViewSql = `CREATE VIEW ${viewName} AS ${inlined}`;
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
-    if (exec.runSync) exec.runSync(createViewSql, []);
+    const createViewSql = `CREATE VIEW ${quoteIdent(viewName, dialect)} AS ${inlined}`;
+    if (exec.run) await exec.run(createViewSql, []);
+    else if (exec.runSync) exec.runSync(createViewSql, []);
     else await exec.executeQuery(createViewSql, []);
   }
 
@@ -214,12 +185,12 @@ export class ViewManager {
    * // Output: View 'old_view' removida com sucesso
    * ```
    */
-  public async dropView(viewName: string): Promise<void> {
-    const dropViewSql = `DROP VIEW IF EXISTS ${viewName}`;
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
-    if (exec.runSync) exec.runSync(dropViewSql, []);
-    else await exec.executeQuery(dropViewSql, []);
+  public async dropView(viewName: string, executor?: DatabaseExecutor): Promise<void> {
+    const exec = getExec(executor);
+    const sql = dropViewSql(viewName, dialectOf(exec));
+    if (exec.run) await exec.run(sql, []);
+    else if (exec.runSync) exec.runSync(sql, []);
+    else await exec.executeQuery(sql, []);
   }
 
   /**
@@ -240,16 +211,15 @@ export class ViewManager {
    * ```
    */
   public listViews(): string[] {
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
+    const exec = getExec();
     if (!exec.executeQuerySync) return [];
     const candidates = namesByDialect(exec.dialect || (QueryKitConfig as any).defaultDialect);
     for (const c of candidates) {
       try {
         const res = exec.executeQuerySync(c.sql, []);
         const rows = (res?.data as any[]) || [];
-        const names = rows.map(c.map).filter(Boolean);
-        if (names.length || rows.length >= 0) return names;
+        const names = rows.map(c.map).filter((n): n is string => Boolean(n));
+        return names;
       } catch {}
     }
     return [];
@@ -295,16 +265,15 @@ export class ViewManager {
    * ```
    */
   public async listViewsAsync(): Promise<string[]> {
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
+    const exec = getExec();
     if (exec.executeQuerySync) return this.listViews();
     const candidates = namesByDialect(exec.dialect || (QueryKitConfig as any).defaultDialect);
     for (const c of candidates) {
       try {
         const res = await exec.executeQuery(c.sql, []);
         const rows = (res?.data as any[]) || [];
-        const names = rows.map(c.map).filter(Boolean);
-        if (names.length || rows.length >= 0) return names;
+        const names = rows.map(c.map).filter((n): n is string => Boolean(n));
+        return names;
       } catch {}
     }
     return [];

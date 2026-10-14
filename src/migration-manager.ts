@@ -1,6 +1,9 @@
-import type { DatabaseExecutor } from './types'
-import { QueryKitConfig } from './config'
-import { QueryBuilder } from './query-builder'
+import type { DatabaseExecutor } from './types.js'
+import { QueryKitConfig } from './config.js'
+import { QueryBuilder } from './query-builder.js'
+import { quoteIdent } from './sql/identifiers.js'
+import { tryGetDialect } from './engine/registry.js'
+import './dialects/register.js'
 
 /**
  * Passo de migração que pode ser string SQL, array de strings ou função.
@@ -105,18 +108,9 @@ function getExec(explicit?: DatabaseExecutor): DatabaseExecutor {
  * ```
  */
 function migrationsTableSql(dialect?: DatabaseExecutor['dialect']): string {
-  switch (dialect) {
-    case 'postgres':
-      return `CREATE TABLE IF NOT EXISTS querykit_migrations (id VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT NOW())`
-    case 'mysql':
-      return `CREATE TABLE IF NOT EXISTS querykit_migrations (id VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
-    case 'mssql':
-      return `IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='querykit_migrations' and xtype='U') CREATE TABLE querykit_migrations (id NVARCHAR(255) PRIMARY KEY, applied_at DATETIME DEFAULT GETDATE())`
-    case 'oracle':
-      return `BEGIN EXECUTE IMMEDIATE 'CREATE TABLE querykit_migrations (id VARCHAR2(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -955 THEN RAISE; END IF; END;`
-    default:
-      return `CREATE TABLE IF NOT EXISTS querykit_migrations (id TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)`
-  }
+  const plugin = tryGetDialect(dialect)
+  if (plugin) return plugin.migrationsTableSql()
+  return `CREATE TABLE IF NOT EXISTS querykit_migrations (id TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)`
 }
 
 /**

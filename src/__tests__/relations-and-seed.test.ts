@@ -1,68 +1,109 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setDefaultExecutor } from '../config'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { setDefaultExecutor, resetQueryKitConfig, setRelations } from '../config'
 import { QueryBuilder } from '../query-builder'
 import { runSeed, Seed } from '../seed'
-
-class ExecR {
-  data: Record<string, any[]> = {
-    users: [{ id: 1, email: 'a@ex.com' }, { id: 2, email: 'b@ex.com' }],
-    posts: [{ id: 10, user_id: 1, title: 't1' }, { id: 11, user_id: 2, title: 't2' }],
-    tags: [{ id: 100, name: 'tech' }],
-    posts_tags: [{ posts_id: 10, tags_id: 100 }],
-  }
-  async executeQuery(sql: string, bindings: any[]) {
-    const m = /FROM\s+(\w+)/i.exec(sql)
-    const tbl = m?.[1]?.replace(/[`"']/g,'') as keyof ExecR['data']
-    if (/INSERT INTO/i.test(sql)) return { data: [], affectedRows: 1, lastInsertId: 99 }
-    if (tbl && this.data[tbl]) return { data: this.data[tbl] }
-    return { data: [] }
-  }
-  executeQuerySync(sql: string, b: any[]) { return { data: [] } }
-  runSync(sql: string, b: any[]) { return { changes: 1, lastInsertRowid: 1 } }
-}
-
-// mock registry for relations resolver import
-vi.stubGlobal('process', { env: { QK_RELATIONS_PATH: '' } })
-vi.mock('../relations-resolver', async (orig) => {
-  const mod = await orig() as any
-  const attachRelations = async (table: string, rows: any[], selector?: (rel:(n:string,s?:string[])=>void)=>void) => {
-    // minimal fake: attach static relationships for validation without hitting DB
-    if (table === 'users') {
-      return rows.map(r => ({ ...r, posts: [{ id: 10, user_id: r.id, title: 't' }] }))
-    }
-    if (table === 'posts') {
-      return rows.map(r => ({ ...r, user: { id: r.user_id, email: 'x@ex.com' } }))
-    }
-    return rows
-  }
-  return { ...mod, attachRelations }
-})
-
-describe('relationship()', () => {
-  beforeEach(() => setDefaultExecutor(new ExecR() as any))
-
-  it('attaches related collections for users', async () => {
-    const out = await new QueryBuilder('users').relationship().all()
-    expect(out[0].posts).toBeDefined()
-  })
-
-  it('attaches belongsTo for posts with selector', async () => {
-    const out = await new QueryBuilder('posts').relationship(rel => rel('user',['id','email'])).all()
-    expect(out[0].user).toBeDefined()
-  })
-})
+import { BetterSqlite3Executor } from '../adapters/better-sqlite3.js'
 
 describe('runSeed', () => {
-  beforeEach(() => setDefaultExecutor(new ExecR() as any))
+  let exec: BetterSqlite3Executor
+
+  beforeEach(() => {
+    resetQueryKitConfig()
+    exec = new BetterSqlite3Executor(':memory:')
+    setDefaultExecutor(exec)
+    exec.executeQuerySync(
+      'CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE, active INTEGER)',
+    )
+  })
+
+  afterEach(() => {
+    exec.close()
+    resetQueryKitConfig()
+  })
+
   it('inserts array rows', async () => {
     const n = await runSeed('users', [{ email: 'seed@ex.com', active: 1 }], { truncate: true })
     expect(n).toBe(1)
+    expect(await new QueryBuilder('users').all()).toHaveLength(1)
   })
+
   it('supports class Seed', async () => {
-    class S extends Seed<{ email: string, active: number }> {
-      async run() { return [{ email: 'x@ex.com', active: 1 }] }
+    class S extends Seed<{ email: string; active: number }> {
+      async run() {
+        return [{ email: 'x@ex.com', active: 1 }]
+      }
     }
     const n = await runSeed('users', new S())
     expect(n).toBe(1)
   })
-}) 
+
+  it('returns 0 for empty data and still truncates when asked', async () => {
+    await runSeed('users', [{ email: 'keep@ex.com', active: 1 }])
+    const n = await runSeed('users', [], { truncate: true })
+    expect(n).toBe(0)
+    expect(await new QueryBuilder('users').all()).toEqual([])
+  })
+
+  it('ignoreDuplicates skips existing uniqueBy rows', async () => {
+    await runSeed('users', [{ email: 'a@ex.com', active: 1 }])
+    const n = await runSeed(
+      'users',
+      [
+        { email: 'a@ex.com', active: 0 },
+        { email: 'b@ex.com', active: 1 },
+      ],
+      { uniqueBy: ['email'], ignoreDuplicates: true },
+    )
+    expect(n).toBe(2)
+    const rows = await new QueryBuilder('users').orderBy('id').all<any>()
+    expect(rows).toHaveLength(2)
+    expect(rows[0].active).toBe(1)
+    expect(rows[1].email).toBe('b@ex.com')
+  })
+
+  it('upsert updates existing uniqueBy rows', async () => {
+    await runSeed('users', [{ email: 'a@ex.com', active: 1 }])
+    await runSeed(
+      'users',
+      [{ email: 'a@ex.com', active: 0 }],
+      { uniqueBy: ['email'], upsert: true },
+    )
+    const row = await new QueryBuilder('users').where('email', 'a@ex.com').first<any>()
+    expect(row.active).toBe(0)
+  })
+
+  it('throws when no executor is configured', async () => {
+    resetQueryKitConfig()
+    await expect(runSeed('users', [{ email: 'x@ex.com' }])).rejects.toThrow(/No executor/)
+  })
+})
+
+describe('relationship() without a registry', () => {
+  let exec: BetterSqlite3Executor
+
+  beforeEach(() => {
+    resetQueryKitConfig()
+    exec = new BetterSqlite3Executor(':memory:')
+    setDefaultExecutor(exec)
+    exec.executeQuerySync('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)')
+    exec.executeQuerySync("INSERT INTO users (email) VALUES ('a@ex.com')")
+  })
+
+  afterEach(() => {
+    exec.close()
+    resetQueryKitConfig()
+  })
+
+  it('returns rows unchanged when setRelations was never called', async () => {
+    const out = await new QueryBuilder('users').relationship().all<any>()
+    expect(out).toHaveLength(1)
+    expect(out[0].email).toBe('a@ex.com')
+    expect(out[0].posts).toBeUndefined()
+  })
+
+  it('returns rows unchanged when the table has no defs', async () => {
+    setRelations({ posts: [{ name: 'user', kind: 'belongsTo', table: 'users', foreignKey: 'user_id' }] })
+    const out = await new QueryBuilder('users').relationship().all<any>()
+    expect(out[0].posts).toBeUndefined()
+  })
+})

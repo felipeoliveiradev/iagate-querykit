@@ -1,5 +1,5 @@
-import { QueryBuilder, type RelationshipSelector } from './query-builder';
-import { runSeed, type SeedRunnable } from './seed'
+import { QueryBuilder, type RelationshipSelector } from './query-builder.js';
+import { runSeed, type SeedRunnable } from './seed.js';
 
 /**
  * Classe base para modelos de dados no QueryKit.
@@ -227,14 +227,26 @@ export class Model {
    * // Output: Usuário atualizado no banco
    * ```
    */
-  save(): Promise<any> {
+  private dataAttributes(): Record<string, any> {
+    const skip = new Set(['fillable', 'guarded', 'banks', 'tableName']);
+    const raw: Record<string, any> = {};
+    for (const [key, value] of Object.entries(this as Record<string, unknown>)) {
+      if (skip.has(key) || typeof value === 'function' || value === undefined) continue;
+      raw[key] = value;
+    }
+    return this.getFillableAttributes(raw);
+  }
+
+  async save(): Promise<any> {
     const queryBase = (this.constructor as typeof Model & { new(): any }).query<this>();
     const query = this.applyBanks(queryBase);
-    const attributes = this.getFillableAttributes(this as any);
-    if ((this as any).id) {
+    const attributes = this.dataAttributes();
+    if ((this as any).id != null) {
       return query.where('id', '=', (this as any).id).update(attributes as Partial<this>).make();
     }
-    return query.insert(attributes as Partial<this>).make();
+    const result = await query.insert(attributes as Partial<this>).make();
+    if (result.lastInsertRowid) (this as any).id = result.lastInsertRowid;
+    return result;
   }
 
   /**
@@ -257,6 +269,9 @@ export class Model {
    * ```
    */
   delete(): Promise<any> {
+    if ((this as any).id === undefined || (this as any).id === null) {
+      return Promise.reject(new Error('Cannot delete a model instance without an id'));
+    }
     const queryBase = (this.constructor as typeof Model & { new(): any }).query<this>();
     const query = this.applyBanks(queryBase);
     return query.where('id', '=', (this as any).id).delete().make();

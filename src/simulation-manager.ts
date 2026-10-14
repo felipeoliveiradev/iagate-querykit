@@ -1,5 +1,5 @@
-import type { QueryBuilder } from './query-builder';
-import { QueryKitConfig } from './config';
+import type { QueryBuilder } from './query-builder.js';
+import { QueryKitConfig } from './config.js';
 
 /**
  * Estado virtual para simulação de banco de dados.

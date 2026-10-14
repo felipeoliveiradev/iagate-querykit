@@ -1,4 +1,12 @@
-import type { MigrationContext, MigrationStep } from './migration-manager'
+import type { MigrationContext, MigrationStep } from './migration-manager.js';
+import { quoteIdent, quoteIdentList } from './sql/identifiers.js';
+import { tryGetDialect } from './engine/registry.js';
+import type { ColumnTypeName, Dialect } from './engine/dialect.js';
+import './dialects/register.js';
+
+function engineOf(dialect?: string): Dialect | undefined {
+  return tryGetDialect(dialect);
+}
 
 /**
  * Tipos de colunas suportados pelo sistema de migração.
@@ -34,6 +42,26 @@ export enum ColumnType {
   Uuid = 'Uuid',
   Binary = 'Binary',
 }
+
+const COLUMN_KIND: Record<ColumnType, ColumnTypeName> = {
+  [ColumnType.Int]: 'int',
+  [ColumnType.BigInt]: 'bigint',
+  [ColumnType.Float]: 'float',
+  [ColumnType.Double]: 'double',
+  [ColumnType.Decimal]: 'decimal',
+  [ColumnType.String]: 'string',
+  [ColumnType.Text]: 'text',
+  [ColumnType.Varchar]: 'string',
+  [ColumnType.Date]: 'date',
+  [ColumnType.Time]: 'time',
+  [ColumnType.DateTime]: 'datetime',
+  [ColumnType.Timestamp]: 'datetime',
+  [ColumnType.TimestampTz]: 'timestamptz',
+  [ColumnType.Boolean]: 'boolean',
+  [ColumnType.Json]: 'json',
+  [ColumnType.Uuid]: 'uuid',
+  [ColumnType.Binary]: 'binary',
+};
 
 /**
  * Valores padrão especiais para colunas.
@@ -164,135 +192,9 @@ export class MigrationBuilder {
    * @returns String SQL do tipo de coluna
    */
   private typeFor(dialect: string | undefined, t: ColumnType, len?: number, prec?: number, scale?: number): string {
-    switch (t) {
-      case ColumnType.Int:
-        switch (dialect) {
-          case 'mysql': return 'INT'
-          case 'postgres': return 'INTEGER'
-          case 'mssql': return 'INT'
-          case 'oracle': return 'NUMBER'
-          default: return 'INTEGER'
-        }
-      case ColumnType.BigInt:
-        switch (dialect) {
-          case 'mysql': return 'BIGINT'
-          case 'postgres': return 'BIGINT'
-          case 'mssql': return 'BIGINT'
-          case 'oracle': return 'NUMBER(19)'
-          default: return 'BIGINT'
-        }
-      case ColumnType.Float:
-        switch (dialect) {
-          case 'mysql': return 'FLOAT'
-          case 'postgres': return 'REAL'
-          case 'mssql': return 'FLOAT'
-          case 'oracle': return 'BINARY_FLOAT'
-          default: return 'REAL'
-        }
-      case ColumnType.Double:
-        switch (dialect) {
-          case 'mysql': return 'DOUBLE'
-          case 'postgres': return 'DOUBLE PRECISION'
-          case 'mssql': return 'FLOAT(53)'
-          case 'oracle': return 'BINARY_DOUBLE'
-          default: return 'DOUBLE'
-        }
-      case ColumnType.Decimal: {
-        const p = prec || 10; const s = scale || 2
-        switch (dialect) {
-          case 'mysql': return `DECIMAL(${p},${s})`
-          case 'postgres': return `DECIMAL(${p},${s})`
-          case 'mssql': return `DECIMAL(${p},${s})`
-          case 'oracle': return `NUMBER(${p},${s})`
-          default: return `NUMERIC(${p},${s})`
-        }
-      }
-      case ColumnType.String:
-      case ColumnType.Varchar: {
-        const L = len || 255
-        switch (dialect) {
-          case 'mysql': return `VARCHAR(${L})`
-          case 'postgres': return `VARCHAR(${L})`
-          case 'mssql': return `NVARCHAR(${L})`
-          case 'oracle': return `VARCHAR2(${L})`
-          default: return `VARCHAR(${L})`
-        }
-      }
-      case ColumnType.Text:
-        switch (dialect) {
-          case 'mysql': return 'TEXT'
-          case 'postgres': return 'TEXT'
-          case 'mssql': return 'NVARCHAR(MAX)'
-          case 'oracle': return 'CLOB'
-          default: return 'TEXT'
-        }
-      case ColumnType.Date:
-        switch (dialect) {
-          case 'mysql': return 'DATE'
-          case 'postgres': return 'DATE'
-          case 'mssql': return 'DATE'
-          case 'oracle': return 'DATE'
-          default: return 'DATE'
-        }
-      case ColumnType.Time:
-        switch (dialect) {
-          case 'mysql': return 'TIME'
-          case 'postgres': return 'TIME'
-          case 'mssql': return 'TIME'
-          case 'oracle': return 'VARCHAR2(20)'
-          default: return 'TEXT'
-        }
-      case ColumnType.DateTime:
-      case ColumnType.Timestamp:
-        switch (dialect) {
-          case 'mysql': return 'DATETIME'
-          case 'postgres': return 'TIMESTAMP'
-          case 'mssql': return 'DATETIME2'
-          case 'oracle': return 'TIMESTAMP'
-          default: return 'DATETIME'
-        }
-      case ColumnType.TimestampTz:
-        switch (dialect) {
-          case 'mysql': return 'TIMESTAMP'
-          case 'postgres': return 'TIMESTAMPTZ'
-          case 'mssql': return 'DATETIMEOFFSET'
-          case 'oracle': return 'TIMESTAMP WITH TIME ZONE'
-          default: return 'DATETIME'
-        }
-      case ColumnType.Boolean:
-        switch (dialect) {
-          case 'mysql': return 'TINYINT(1)'
-          case 'postgres': return 'BOOLEAN'
-          case 'mssql': return 'BIT'
-          case 'oracle': return 'NUMBER(1)'
-          default: return 'INTEGER'
-        }
-      case ColumnType.Json:
-        switch (dialect) {
-          case 'mysql': return 'JSON'
-          case 'postgres': return 'JSONB'
-          case 'mssql': return 'NVARCHAR(MAX)'
-          case 'oracle': return 'CLOB'
-          default: return 'TEXT'
-        }
-      case ColumnType.Uuid:
-        switch (dialect) {
-          case 'postgres': return 'UUID'
-          case 'mssql': return 'UNIQUEIDENTIFIER'
-          case 'oracle': return 'VARCHAR2(36)'
-          default: return 'CHAR(36)'
-        }
-      case ColumnType.Binary:
-        switch (dialect) {
-          case 'mysql': return 'BLOB'
-          case 'postgres': return 'BYTEA'
-          case 'mssql': return 'VARBINARY(MAX)'
-          case 'oracle': return 'BLOB'
-          default: return 'BLOB'
-        }
-      default:
-        return 'TEXT'
-    }
+    const plugin = engineOf(dialect) || engineOf('sqlite')
+    const kind = COLUMN_KIND[t] || 'text'
+    return plugin!.columnType(kind, { length: len, precision: prec, scale })
   }
 
   /**
@@ -304,23 +206,10 @@ export class MigrationBuilder {
    * @returns String SQL do valor padrão
    */
   private defaultFor(dialect: string | undefined, t: ColumnType, v: NonNullable<ColumnOptions['default']>): string {
+    const plugin = engineOf(dialect) || engineOf('sqlite')
     const wantsCurrentTs = v === ColumnDefault.CurrentTimestamp || (typeof v === 'string' && v.toUpperCase() === 'CURRENT_TIMESTAMP')
-    if (wantsCurrentTs) {
-      switch (dialect) {
-        case 'mssql': return 'GETDATE()'
-        case 'oracle': return 'CURRENT_TIMESTAMP'
-        default: return 'CURRENT_TIMESTAMP'
-      }
-    }
-    if (v === ColumnDefault.UuidV4) {
-      switch (dialect) {
-        case 'mysql': return 'UUID()'
-        case 'postgres': return 'gen_random_uuid()'
-        case 'mssql': return 'NEWID()'
-        case 'oracle': return 'LOWER(RAWTOHEX(SYS_GUID()))'
-        default: return 'NULL'
-      }
-    }
+    if (wantsCurrentTs) return plugin!.currentTimestampSql()
+    if (v === ColumnDefault.UuidV4) return plugin!.uuidV4Sql()
     if (typeof v === 'string') return `'${v.replace(/'/g, "''")}'`
     if (v === null) return 'NULL'
     if (typeof v === 'boolean') return v ? '1' : '0'
@@ -337,7 +226,8 @@ export class MigrationBuilder {
    * @returns String SQL da definição da coluna
    */
   private colDef(dialect: string | undefined, name: string, type: ColumnType, opts: ColumnOptions = {}): string {
-    const parts: string[] = [name, this.typeFor(dialect, type, opts.length, opts.precision, opts.scale)]
+    const ident = quoteIdent(name, (dialect as any) || 'sqlite');
+    const parts: string[] = [ident, this.typeFor(dialect, type, opts.length, opts.precision, opts.scale)]
     if (opts.primaryKey) parts.push('PRIMARY KEY')
     if (opts.notNull) parts.push('NOT NULL')
     if (opts.unique) parts.push('UNIQUE')
@@ -348,35 +238,14 @@ export class MigrationBuilder {
       const mode = (ai as any).mode as ('always' | 'default' | 'serial' | undefined)
       const start = (ai as any).start ?? 1
       const step = (ai as any).increment ?? 1
-      switch (dialect) {
-        case 'mysql':
-          parts.push('AUTO_INCREMENT')
-          break
-        case 'postgres': {
-          if (mode === 'serial') {
-            if (type === ColumnType.BigInt) parts[1] = 'BIGSERIAL'
-            else parts[1] = 'SERIAL'
-          } else {
-            const m = mode === 'always' ? 'ALWAYS' : 'BY DEFAULT'
-            parts.push(`GENERATED ${m} AS IDENTITY`)
-          }
-          break
-        }
-        case 'mssql':
-          parts.push(`IDENTITY(${start},${step})`)
-          break
-        case 'oracle': {
-          const m = mode === 'always' ? 'ALWAYS' : 'BY DEFAULT'
-          parts.push(`GENERATED ${m} AS IDENTITY`)
-          break
-        }
-        default: { // sqlite
-          const alreadyPk = parts.some(p => /PRIMARY KEY/i.test(p))
-          const baseType = parts[1] || ''
-          if (!alreadyPk) parts.push('PRIMARY KEY')
-          if (/^INTEGER\b/i.test(baseType)) parts.push('AUTOINCREMENT')
-          break
-        }
+      const plugin = engineOf(dialect) || engineOf('sqlite')
+      const spec = plugin?.autoIncrementSql?.(COLUMN_KIND[type] || 'int', { mode, start, increment: step })
+      if (typeof spec === 'string') {
+        parts.push(spec)
+      } else if (spec) {
+        if (spec.replaceType) parts[1] = spec.replaceType
+        if (spec.primaryKey && !parts.some((p) => /PRIMARY KEY/i.test(p))) parts.push('PRIMARY KEY')
+        if (spec.suffix) parts.push(spec.suffix)
       }
     }
 
@@ -387,7 +256,7 @@ export class MigrationBuilder {
 
     if (opts.references) {
       const refCol = opts.references.column || 'id'
-      let ref = `REFERENCES ${opts.references.table} (${refCol})`
+      let ref = `REFERENCES ${quoteIdent(opts.references.table, (dialect as any) || 'sqlite')} (${quoteIdent(refCol, (dialect as any) || 'sqlite')})`
       if (opts.references.onDelete) ref += ` ON DELETE ${opts.references.onDelete}`
       if (opts.references.onUpdate) ref += ` ON UPDATE ${opts.references.onUpdate}`
       parts.push(ref)
@@ -421,7 +290,7 @@ export class MigrationBuilder {
   createTable(name: string, columns: Record<string, { type: ColumnType } & ColumnOptions>): this {
     this.steps.push(async (ctx) => {
       const cols = Object.entries(columns).map(([n, def]) => this.colDef(ctx.dialect, n, def.type, def))
-      const sql = `CREATE TABLE ${name} (${cols.join(', ')})`
+      const sql = `CREATE TABLE ${quoteIdent(name, ctx.dialect || 'sqlite')} (${cols.join(', ')})`
       await ctx.query(sql)
     })
     return this
@@ -445,7 +314,11 @@ export class MigrationBuilder {
    * ```
    */
   dropTable(name: string): this {
-    this.steps.push(async (ctx) => { await ctx.query(`DROP TABLE IF EXISTS ${name}`) })
+    this.steps.push(async (ctx) => {
+      const d = ctx.dialect || 'sqlite'
+      const plugin = engineOf(d) || engineOf('sqlite')!
+      await ctx.query(plugin.dropTableSql(quoteIdent(name, d)))
+    })
     return this
   }
 
@@ -474,7 +347,9 @@ export class MigrationBuilder {
    */
   addColumn(table: string, column: string, def: { type: ColumnType } & ColumnOptions): this {
     this.steps.push(async (ctx) => {
-      const sql = `ALTER TABLE ${table} ADD COLUMN ${this.colDef(ctx.dialect, column, def.type, def)}`
+      const d = ctx.dialect || 'sqlite'
+      const plugin = engineOf(d) || engineOf('sqlite')!
+      const sql = `ALTER TABLE ${quoteIdent(table, d)} ADD ${plugin.addColumnKeyword()}${this.colDef(d, column, def.type, def)}`
       await ctx.query(sql)
     })
     return this
@@ -500,7 +375,7 @@ export class MigrationBuilder {
    */
   dropColumn(table: string, column: string): this {
     this.steps.push(async (ctx) => {
-      await ctx.query(`ALTER TABLE ${table} DROP COLUMN ${column}`)
+      await ctx.query(`ALTER TABLE ${quoteIdent(table, ctx.dialect || 'sqlite')} DROP COLUMN ${quoteIdent(column, ctx.dialect || 'sqlite')}`)
     })
     return this
   }
@@ -526,7 +401,7 @@ export class MigrationBuilder {
    */
   renameColumn(table: string, from: string, to: string): this {
     this.steps.push(async (ctx) => {
-      await ctx.query(`ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to}`)
+      await ctx.query(`ALTER TABLE ${quoteIdent(table, ctx.dialect || 'sqlite')} RENAME COLUMN ${quoteIdent(from, ctx.dialect || 'sqlite')} TO ${quoteIdent(to, ctx.dialect || 'sqlite')}`)
     })
     return this
   }
@@ -553,9 +428,11 @@ export class MigrationBuilder {
    */
   createIndex(table: string, columns: string[], opts: { unique?: boolean; name?: string } = {}): this {
     this.steps.push(async (ctx) => {
+      const d = ctx.dialect || 'sqlite'
+      const plugin = engineOf(d) || engineOf('sqlite')!
       const name = opts.name || `${table}_${columns.join('_')}_idx`
       const uniq = opts.unique ? 'UNIQUE ' : ''
-      const sql = `CREATE ${uniq}INDEX IF NOT EXISTS ${name} ON ${table} (${columns.join(', ')})`
+      const sql = `CREATE ${uniq}INDEX ${plugin.ifNotExistsClause()}${quoteIdent(name, d)} ON ${quoteIdent(table, d)} (${quoteIdentList(columns, d)})`
       await ctx.query(sql)
     })
     return this
@@ -579,7 +456,11 @@ export class MigrationBuilder {
    * ```
    */
   dropIndex(name: string): this {
-    this.steps.push(async (ctx) => { await ctx.query(`DROP INDEX IF EXISTS ${name}`) })
+    this.steps.push(async (ctx) => {
+      const d = ctx.dialect || 'sqlite'
+      const plugin = engineOf(d) || engineOf('sqlite')!
+      await ctx.query(plugin.dropIndexSql(quoteIdent(name, d)))
+    })
     return this
   }
 
@@ -616,11 +497,12 @@ export class MigrationBuilder {
         this.colDef(ctx.dialect, leftCol, ColumnType.Int, { notNull: true, references: { table: leftTable, onDelete: on } }),
         this.colDef(ctx.dialect, rightCol, ColumnType.Int, { notNull: true, references: { table: rightTable, onDelete: on } }),
       ]
-      const sql = `CREATE TABLE ${name} (${cols.join(', ')})`
+      const d = ctx.dialect || 'sqlite'
+      const sql = `CREATE TABLE ${quoteIdent(name, d)} (${cols.join(', ')})`
       await ctx.query(sql)
-      // composite unique to avoid duplicates
       const idxName = `${name}_${leftCol}_${rightCol}_uniq`
-      await ctx.query(`CREATE UNIQUE INDEX IF NOT EXISTS ${idxName} ON ${name} (${leftCol}, ${rightCol})`)
+      const plugin = engineOf(d) || engineOf('sqlite')!
+      await ctx.query(`CREATE UNIQUE INDEX ${plugin.ifNotExistsClause()}${quoteIdent(idxName, d)} ON ${quoteIdent(name, d)} (${quoteIdent(leftCol, d)}, ${quoteIdent(rightCol, d)})`)
     })
     return this
   }

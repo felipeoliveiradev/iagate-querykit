@@ -18,6 +18,6 @@ describe('parallel()', () => {
     const q2 = new QueryBuilder('t').insert({ a: 1 })
     const res = await parallel(q1 as any, q2 as any)
     expect(Array.isArray(res)).toBe(true)
-    expect(exec.calls).toEqual(['all','make'])
+    expect(exec.calls.sort()).toEqual(['all', 'make'])
   })
 }) 

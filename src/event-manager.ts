@@ -4,7 +4,7 @@
  */
 type Listener = (...args: any[]) => void;
 
-import { QueryKitConfig } from './config';
+import { QueryKitConfig } from './config.js';
 
 /**
  * Gerenciador de eventos para o QueryKit.

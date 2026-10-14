@@ -8,7 +8,7 @@ title: Paralelo
 parallel(...queries: QueryBuilder<any>[]): Promise<any[]>
 ```
 
-Regla: si `toSql()` empieza con `SELECT`, usa `.all()`. En caso contrario, `.run()`.
+Regla: si hay una escritura pendiente (`hasPendingWrite()`), usa `.make()`. En caso contrario, `.all()`.
 
 Ejemplo (lecturas + escrituras):
 ```ts

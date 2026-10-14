@@ -25,6 +25,7 @@ class Exec implements DatabaseExecutor {
     return { data: [] }
   }
   getSeen() { return this.seenSql.slice() }
+  normalized() { return this.seenSql.join('\n').replace(/["`\[\]]/g, '') }
 }
 
 describe('MigrationManager', () => {
@@ -86,7 +87,7 @@ describe('MigrationManager', () => {
       setDefaultExecutor(ex as any)
       await resetMigrations({ executor: ex as any })
       await migrateUp([spec(`${dialect}_001`)], { executor: ex as any })
-      const sql = (ex as any).getSeen().join('\n')
+      const sql = (ex as any).normalized()
       for (const p of patterns) expect(sql).toMatch(p)
     }
   })
@@ -190,6 +191,25 @@ describe('MigrationManager', () => {
         c_uuid: /c_uuid UNIQUEIDENTIFIER/i,
         c_bin: /c_bin VARBINARY\(MAX\)/i,
       },
+      oracle: {
+        c_int: /c_int NUMBER(?!\()/i,
+        c_bigint: /c_bigint NUMBER\(19\)/i,
+        c_float: /c_float BINARY_FLOAT/i,
+        c_double: /c_double BINARY_DOUBLE/i,
+        c_dec: /c_dec NUMBER\(12,2\)/i,
+        c_str: /c_str VARCHAR2\(100\)/i,
+        c_vc: /c_vc VARCHAR2\(100\)/i,
+        c_text: /c_text CLOB/i,
+        c_date: /c_date DATE/i,
+        c_time: /c_time VARCHAR2\(20\)/i,
+        c_dt: /c_dt TIMESTAMP(?!\sWITH)/i,
+        c_ts: /c_ts TIMESTAMP(?!\sWITH)/i,
+        c_tstz: /c_tstz TIMESTAMP WITH TIME ZONE/i,
+        c_bool: /c_bool NUMBER\(1\)/i,
+        c_json: /c_json CLOB/i,
+        c_uuid: /c_uuid VARCHAR2\(36\)/i,
+        c_bin: /c_bin BLOB/i,
+      },
     }
 
     for (const dialect of Object.keys(expectations)) {
@@ -197,7 +217,7 @@ describe('MigrationManager', () => {
       setDefaultExecutor(ex as any)
       await resetMigrations({ executor: ex as any })
       await migrateUp([{ id: `${dialect}_all_types`, up: buildAllTypes() }], { executor: ex as any })
-      const sql = (ex as any).getSeen().join('\n')
+      const sql = (ex as any).normalized()
       const exp = expectations[dialect]
       for (const key of Object.keys(exp)) {
         expect(sql).toMatch(exp[key as keyof typeof exp])
@@ -241,7 +261,7 @@ describe('MigrationManager', () => {
       await resetMigrations({ executor: ex as any })
       for (const [val, regs] of vals) {
         await migrateUp([{ id: `${dialect}_defaults_${String(val)}`.replace(/\W+/g,'_'), up: buildWithDefaults(val) }], { executor: ex as any })
-        const sql = (ex as any).getSeen().join('\n')
+        const sql = (ex as any).normalized()
         for (const r of regs) expect(sql).toMatch(r)
       }
     }
@@ -265,7 +285,7 @@ describe('MigrationManager', () => {
       setDefaultExecutor(ex as any)
       await resetMigrations({ executor: ex as any })
       await migrateUp([spec(`${dialect}_uuidv4`)], { executor: ex as any })
-      const sql = (ex as any).getSeen().join('\n')
+      const sql = (ex as any).normalized()
       expect(sql).toMatch(pattern)
     }
   })
@@ -288,7 +308,7 @@ describe('MigrationManager', () => {
       setDefaultExecutor(ex as any)
       await resetMigrations({ executor: ex as any })
       await migrateUp([mkSpec(`${dialect}_ai`)], { executor: ex as any })
-      const sql = (ex as any).getSeen().join('\n')
+      const sql = (ex as any).normalized()
       expect(sql).toMatch(re)
     }
   })
@@ -304,17 +324,18 @@ describe('MigrationManager', () => {
     setDefaultExecutor(ex as any)
     await resetMigrations({ executor: ex as any })
     await migrateUp([spec('pg_serial')], { executor: ex as any })
-    const sql = (ex as any).getSeen().join('\n')
+    const sql = (ex as any).normalized()
     expect(sql).toMatch(/CREATE TABLE s \(a SERIAL PRIMARY KEY, b BIGSERIAL\)/i)
   })
 
   it('emits REFERENCES and createJoinTable with unique index', async () => {
     class ExecCapture implements DatabaseExecutor {
+      dialect = 'sqlite' as const
       private seen: string[] = []
       executeQuerySync?(sql: string, bindings: any[]): { data: any[] } { this.seen.push(sql); return { data: [] } }
       async executeQuery(sql: string, bindings: any[] = []) { this.seen.push(sql); return { data: [] } }
       runSync?(sql: string, bindings: any[]): any { this.seen.push(sql); return { changes: 1 } }
-      getSeen() { return this.seen.join('\n') }
+      getSeen() { return this.seen.join('\n').replace(/["`\[\]]/g, '') }
     }
     const ex = new ExecCapture()
     setDefaultExecutor(ex as any)
@@ -336,5 +357,103 @@ describe('MigrationManager', () => {
     expect(sql).toMatch(/REFERENCES posts \(id\) ON DELETE CASCADE/i)
     expect(sql).toMatch(/REFERENCES tags \(id\) ON DELETE CASCADE/i)
     expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS posts_tags_posts_id_tags_id_uniq ON posts_tags \(posts_id, tags_id\)/i)
+  })
+
+  it('createIndex / dropIndex / raw / join table on oracle and mssql', async () => {
+    for (const dialect of ['oracle', 'mssql'] as const) {
+      const ex = new Exec(dialect)
+      setDefaultExecutor(ex as any)
+      await resetMigrations({ executor: ex as any })
+      const up = migration((b: MigrationBuilder) => {
+        b.createIndex('users', ['email'], { unique: true, name: 'users_email_idx' })
+          .dropIndex('users_email_idx')
+          .createJoinTable('user_roles', 'users', 'roles')
+          .raw('SELECT 1')
+      })
+      await migrateUp([{ id: `${dialect}_idx`, up }], { executor: ex as any })
+      const sql = ex.normalized()
+      expect(sql).toMatch(/CREATE UNIQUE INDEX/)
+      if (dialect === 'oracle') expect(sql).toMatch(/EXECUTE IMMEDIATE 'DROP INDEX/)
+      else expect(sql).toMatch(/DROP INDEX/)
+      expect(sql).toMatch(/CREATE TABLE user_roles/)
+      expect(sql).toMatch(/SELECT 1/)
+    }
+  })
+
+  it('ctx.runSync throws when the executor has no runSync (down path)', async () => {
+    class AsyncOnly {
+      dialect = 'sqlite' as const
+      migrations: string[] = []
+      async executeQuery(sql: string, bindings: any[] = []) {
+        if (/CREATE TABLE IF NOT EXISTS querykit_migrations/.test(sql)) return { data: [] }
+        if (/INSERT INTO querykit_migrations/.test(sql)) { this.migrations.push(bindings[0]); return { data: [] } }
+        if (/SELECT id FROM querykit_migrations/.test(sql)) return { data: this.migrations.map(id => ({ id })) }
+        if (/DELETE FROM querykit_migrations/.test(sql)) { this.migrations = this.migrations.filter(id => id !== bindings[0]); return { data: [] } }
+        if (/DROP TABLE IF EXISTS querykit_migrations/.test(sql)) { this.migrations = []; return { data: [] } }
+        return { data: [] }
+      }
+    }
+    const ex = new AsyncOnly()
+    setDefaultExecutor(ex as any)
+    await resetMigrations({ executor: ex as any })
+    await migrateUp([{ id: 'fn_sync', up: 'SELECT 1' }], { executor: ex as any })
+    await expect(
+      migrateDown([{ id: 'fn_sync', up: 'SELECT 1', down: (ctx) => { ctx.runSync('DROP TABLE t') } }], { executor: ex as any }),
+    ).rejects.toThrow(/runSync not supported/)
+  })
+
+  it('migrateDown records delete via executeQuery when runSync is absent', async () => {
+    class AsyncOnly {
+      dialect = 'sqlite' as const
+      migrations: string[] = []
+      calls: string[] = []
+      async executeQuery(sql: string, bindings: any[] = []) {
+        this.calls.push(sql)
+        if (/CREATE TABLE IF NOT EXISTS querykit_migrations/.test(sql)) return { data: [] }
+        if (/INSERT INTO querykit_migrations/.test(sql)) { this.migrations.push(bindings[0]); return { data: [] } }
+        if (/SELECT id FROM querykit_migrations/.test(sql)) return { data: this.migrations.map(id => ({ id })) }
+        if (/DELETE FROM querykit_migrations/.test(sql)) { this.migrations = this.migrations.filter(id => id !== bindings[0]); return { data: [] } }
+        if (/DROP TABLE IF EXISTS querykit_migrations/.test(sql)) { this.migrations = []; return { data: [] } }
+        return { data: [] }
+      }
+    }
+    const ex = new AsyncOnly()
+    setDefaultExecutor(ex as any)
+    await resetMigrations({ executor: ex as any })
+    await migrateUp([{ id: 'd1', up: 'SELECT 1', down: 'DROP TABLE t' }], { executor: ex as any })
+    const res = await migrateDown([{ id: 'd1', up: 'SELECT 1', down: 'DROP TABLE t' }], { executor: ex as any })
+    expect(res.reverted).toEqual(['d1'])
+    expect(ex.calls.some((s) => /DELETE FROM querykit_migrations/.test(s))).toBe(true)
+    expect(await listAppliedMigrations(ex as any)).toEqual([])
+  })
+
+  it('migrateDown delete prefers runSync when present', async () => {
+    class WithSync {
+      dialect = 'sqlite' as const
+      migrations: string[] = []
+      syncCalls: string[] = []
+      executeQuerySync(sql: string, bindings: any[] = []) {
+        if (/SELECT id FROM querykit_migrations/.test(sql)) return { data: this.migrations.map(id => ({ id })) }
+        return { data: [] }
+      }
+      async executeQuery(sql: string, bindings: any[] = []) {
+        if (/SELECT id FROM querykit_migrations/.test(sql)) return { data: this.migrations.map(id => ({ id })) }
+        return { data: [] }
+      }
+      runSync(sql: string, bindings: any[] = []) {
+        this.syncCalls.push(sql)
+        if (/INSERT INTO querykit_migrations/.test(sql)) this.migrations.push(bindings[0])
+        if (/DELETE FROM querykit_migrations/.test(sql)) this.migrations = this.migrations.filter(id => id !== bindings[0])
+        if (/DROP TABLE IF EXISTS querykit_migrations/.test(sql)) this.migrations = []
+        return { changes: 1, lastInsertRowid: 0 }
+      }
+    }
+    const ex = new WithSync()
+    setDefaultExecutor(ex as any)
+    await resetMigrations({ executor: ex as any })
+    await migrateUp([{ id: 's1', up: 'SELECT 1', down: 'DROP TABLE t' }], { executor: ex as any })
+    const res = await migrateDown([{ id: 's1', up: 'SELECT 1', down: 'DROP TABLE t' }], { executor: ex as any })
+    expect(res.reverted).toEqual(['s1'])
+    expect(ex.syncCalls.some((s) => /DELETE FROM querykit_migrations/.test(s))).toBe(true)
   })
 }) 

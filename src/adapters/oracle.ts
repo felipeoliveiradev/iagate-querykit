@@ -1,18 +1,13 @@
-import type { DatabaseExecutor, QueryResult } from '../types';
-import { createRequire } from 'node:module';
+import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
+import { asWrite, loadOptionalPeer } from './shared.js';
+import { runNestedSavepoint } from './savepoints.js';
+import { mapBindings, runDriver, toNativeSql } from './driver-wrap.js';
+import { hydrateRows } from '../engine/hydrate.js';
 
 let oracledb: any;
 function ensureOracle() {
   if (oracledb) return;
-  const mocked = (globalThis as any).__vitest_mocks__?.oracledb;
-  if (mocked) { oracledb = mocked; return; }
-  try { const req = createRequire(import.meta.url); oracledb = req('oracledb'); } catch { throw new Error('oracledb is required: npm install oracledb'); }
-}
-
-function toOracle(sql: string): { sql: string } {
-  let i = 0;
-  const out = sql.replace(/\?/g, () => `:${++i}`);
-  return { sql: out };
+  oracledb = loadOptionalPeer('oracledb', 'oracledb');
 }
 
 export type OracleExecutorConfig = {
@@ -21,14 +16,29 @@ export type OracleExecutorConfig = {
   connectString?: string;
   poolMin?: number;
   poolMax?: number;
+  pool?: any;
 };
 
-export class OracleExecutor implements DatabaseExecutor {
-  public dialect: 'oracle' = 'oracle';
-  private pool: any;
+function mapOracle(res: any): QueryResult {
+  const rows = hydrateRows(res?.rows || []);
+  return {
+    data: rows,
+    affectedRows: res?.rowsAffected,
+    lastInsertId: res?.lastRowid,
+  };
+}
 
-  constructor(private config: OracleExecutorConfig = {}) {
+export class OracleExecutor implements DatabaseExecutor {
+  public readonly dialect = 'oracle' as const;
+  private pool: any;
+  private config: OracleExecutorConfig;
+  private ownsPool: boolean;
+
+  constructor(config: OracleExecutorConfig = {}) {
     ensureOracle();
+    this.config = config;
+    this.pool = config.pool;
+    this.ownsPool = !config.pool;
   }
 
   private async getPool() {
@@ -45,17 +55,82 @@ export class OracleExecutor implements DatabaseExecutor {
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
+    return runDriver(this.dialect, sql, bindings, async () => {
+      const pool = await this.getPool();
+      const conn = await pool.getConnection();
+      try {
+        const { sql: text } = toNativeSql(this.dialect, sql);
+        const res = await conn.execute(text, mapBindings(this.dialect, bindings), {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+          autoCommit: true,
+        });
+        return mapOracle(res);
+      } finally {
+        try {
+          await conn.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+  }
+
+  async run(sql: string, bindings: any[] = []): Promise<WriteResult> {
+    return asWrite(await this.executeQuery(sql, bindings));
+  }
+
+  async transaction<T>(fn: (tx: DatabaseExecutor) => Promise<T>): Promise<T> {
     const pool = await this.getPool();
     const conn = await pool.getConnection();
+    const makeTx = (depth: number): DatabaseExecutor => {
+      const tx: DatabaseExecutor = {
+        dialect: 'oracle',
+        executeQuery: async (sql: string, bindings: any[] = []) =>
+          runDriver('oracle', sql, bindings, async () => {
+            const { sql: text } = toNativeSql('oracle', sql);
+            const res = await conn.execute(text, mapBindings('oracle', bindings), {
+              outFormat: oracledb.OUT_FORMAT_OBJECT,
+              autoCommit: false,
+            });
+            return mapOracle(res);
+          }),
+        run: async (sql: string, bindings: any[] = []) =>
+          asWrite(await tx.executeQuery(sql, bindings)),
+        transaction: (inner) =>
+          runNestedSavepoint(
+            'oracle',
+            depth + 1,
+            async (sql) => {
+              await conn.execute(sql);
+            },
+            () => inner(makeTx(depth + 1)),
+          ),
+      };
+      return tx;
+    };
     try {
-      const { sql: text } = toOracle(sql);
-      const res = await conn.execute(text, bindings, { outFormat: oracledb.OUT_FORMAT_OBJECT, autoCommit: true });
-      const rows = (res as any).rows || [];
-      const affectedRows = (res as any).rowsAffected;
-      const lastInsertId = (res as any).lastRowid;
-      return { data: rows, affectedRows, lastInsertId };
+      const result = await fn(makeTx(0));
+      await conn.commit();
+      return result;
+    } catch (err) {
+      try {
+        await conn.rollback();
+      } catch {
+        /* ignore */
+      }
+      throw err;
     } finally {
-      try { await conn.close(); } catch {}
+      try {
+        await conn.close();
+      } catch {
+        /* ignore */
+      }
     }
   }
-} 
+
+  async close(): Promise<void> {
+    if (this.ownsPool && this.pool && typeof this.pool.close === 'function') {
+      await this.pool.close(0);
+    }
+  }
+}

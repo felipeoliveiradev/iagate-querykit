@@ -1,5 +1,45 @@
-import { QueryKitConfig } from './config';
-import { eventManager } from './event-manager';
+import { QueryKitConfig } from './config.js';
+import { eventManager } from './event-manager.js';
+import { quoteIdent } from './sql/identifiers.js';
+import type { DatabaseExecutor } from './types.js';
+import type { SqlDialect } from './sql/dialect.js';
+import { tryGetDialect } from './engine/registry.js';
+import { fallbackCatalogs } from './dialects/define.js';
+import './dialects/register.js';
+
+function getExec(explicit?: DatabaseExecutor): DatabaseExecutor {
+  const exec = explicit || QueryKitConfig.defaultExecutor;
+  if (!exec) throw new Error('No executor configured for QueryKit');
+  return exec;
+}
+
+function dialectOf(exec: DatabaseExecutor): SqlDialect {
+  return exec.dialect || QueryKitConfig.defaultDialect || 'sqlite';
+}
+
+export function buildCreateTriggerSql(
+  name: string,
+  tableName: string,
+  timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF',
+  event: 'INSERT' | 'UPDATE' | 'DELETE',
+  body: string,
+  dialect: SqlDialect | string,
+): string[] {
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.createTriggerSql(name, tableName, timing, event, body);
+  const ident = quoteIdent(name, (dialect as SqlDialect) || 'sqlite');
+  const table = quoteIdent(tableName, (dialect as SqlDialect) || 'sqlite');
+  const clean = body.trim().replace(/;?\s*$/, '');
+  return [
+    `CREATE TRIGGER IF NOT EXISTS ${ident} ${timing} ${event} ON ${table} FOR EACH ROW BEGIN ${clean}; END`,
+  ];
+}
+
+export function buildDropTriggerSql(name: string, dialect: SqlDialect | string, tableName?: string): string {
+  const plugin = tryGetDialect(dialect);
+  if (plugin) return plugin.dropTriggerSql(name, tableName);
+  return `DROP TRIGGER IF EXISTS ${quoteIdent(name, (dialect as SqlDialect) || 'sqlite')}`;
+}
 
 /**
  * Tipos de eventos que podem disparar triggers SQL.
@@ -205,9 +245,10 @@ export class TriggerManager {
       return;
     }
     if (typeof body === 'string') {
-      const exec = QueryKitConfig.defaultExecutor;
-      if (!exec || !exec.runSync) throw new Error('No executor configured for QueryKit');
-      exec.runSync(body, []);
+      const exec = getExec();
+      if (exec.run) await exec.run(body, []);
+      else if (exec.runSync) exec.runSync(body, []);
+      else await exec.executeQuery(body, []);
       return;
     }
     if (typeof body === 'function') {
@@ -498,58 +539,50 @@ export class TriggerManager {
   }
 
   // SQL-level triggers (multi-vendor)
-  public createTrigger(name: string, tableName: string, timing: TriggerTiming, event: TriggerEvent, body: string): void {
-    const createTriggerSql = `
-      CREATE TRIGGER IF NOT EXISTS ${name}
-      ${timing} ${event} ON ${tableName}
-      FOR EACH ROW
-      BEGIN
-        ${body}
-      END;
-    `;
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
-    if (exec.runSync) exec.runSync(createTriggerSql, []);
-    else exec.executeQuery(createTriggerSql, []);
-  }
-
-  public dropTrigger(name: string): void {
-    const dropTriggerSql = `DROP TRIGGER IF EXISTS ${name}`;
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
-    if (exec.runSync) exec.runSync(dropTriggerSql, []);
-    else exec.executeQuery(dropTriggerSql, []);
-  }
-
-  private triggerQueriesByDialect(dialect?: string) {
-    switch (dialect) {
-      case 'sqlite': return [{ sql: "SELECT name FROM sqlite_master WHERE type='trigger'", map: (r: any) => r.name }];
-      case 'mysql': return [{ sql: "SELECT TRIGGER_NAME AS name FROM INFORMATION_SCHEMA.TRIGGERS", map: (r: any) => r.name }];
-      case 'postgres': return [{ sql: "SELECT tgname AS name FROM pg_trigger WHERE NOT tgisinternal", map: (r: any) => r.tgname || r.name }];
-      case 'mssql': return [{ sql: "SELECT name FROM sys.triggers", map: (r: any) => r.name }];
-      case 'oracle': return [{ sql: "SELECT TRIGGER_NAME AS name FROM USER_TRIGGERS", map: (r: any) => r.name }];
-      default:
-        return [
-          { sql: "SELECT name FROM sqlite_master WHERE type='trigger'", map: (r: any) => r.name },
-          { sql: "SELECT TRIGGER_NAME AS name FROM INFORMATION_SCHEMA.TRIGGERS", map: (r: any) => r.name },
-          { sql: "SELECT tgname AS name FROM pg_trigger WHERE NOT tgisinternal", map: (r: any) => r.tgname || r.name },
-          { sql: "SELECT name FROM sys.triggers", map: (r: any) => r.name },
-          { sql: "SELECT TRIGGER_NAME AS name FROM USER_TRIGGERS", map: (r: any) => r.name },
-        ];
+  public createTrigger(name: string, tableName: string, timing: TriggerTiming, event: TriggerEvent, body: string, executor?: DatabaseExecutor): void {
+    const exec = getExec(executor);
+    const statements = buildCreateTriggerSql(name, tableName, timing, event, body, dialectOf(exec));
+    for (const sql of statements) {
+      if (exec.runSync) exec.runSync(sql, []);
+      else void exec.executeQuery(sql, []);
     }
   }
 
+  public async createTriggerAsync(name: string, tableName: string, timing: TriggerTiming, event: TriggerEvent, body: string, executor?: DatabaseExecutor): Promise<void> {
+    const exec = getExec(executor);
+    const statements = buildCreateTriggerSql(name, tableName, timing, event, body, dialectOf(exec));
+    for (const sql of statements) {
+      if (exec.run) await exec.run(sql, []);
+      else if (exec.runSync) exec.runSync(sql, []);
+      else await exec.executeQuery(sql, []);
+    }
+  }
+
+  public dropTrigger(name: string, executor?: DatabaseExecutor, tableName?: string): void {
+    const exec = getExec(executor);
+    const sql = buildDropTriggerSql(name, dialectOf(exec), tableName);
+    if (exec.runSync) exec.runSync(sql, []);
+    else void exec.executeQuery(sql, []);
+  }
+
+  private triggerQueriesByDialect(dialect?: string) {
+    const plugin = tryGetDialect(dialect);
+    if (plugin) return plugin.listTriggersQueries();
+    return fallbackCatalogs().triggers;
+  }
+
   public listTriggers(): string[] {
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
+    const exec = getExec();
     if (!exec.executeQuerySync) return [];
-    const candidates = this.triggerQueriesByDialect(exec.dialect || (QueryKitConfig as any).defaultDialect);
+    const dialect = exec.dialect;
+    const candidates = this.triggerQueriesByDialect(dialect);
+    const known = Boolean(dialect && ['sqlite', 'mysql', 'postgres', 'mssql', 'oracle'].includes(dialect));
     for (const c of candidates) {
       try {
         const res = exec.executeQuerySync(c.sql, []);
         const rows = (res?.data as any[]) || [];
-        const names = rows.map(c.map).filter(Boolean);
-        if (names.length || rows.length >= 0) return names;
+        const names = rows.map(c.map).filter((n): n is string => Boolean(n));
+        if (known || names.length) return names;
       } catch { /* try next */ }
     }
     return [];
@@ -561,16 +594,17 @@ export class TriggerManager {
   }
 
   public async listTriggersAsync(): Promise<string[]> {
-    const exec = QueryKitConfig.defaultExecutor as any;
-    if (!exec) throw new Error('No executor configured for QueryKit');
+    const exec = getExec();
     if (exec.executeQuerySync) return this.listTriggers();
-    const candidates = this.triggerQueriesByDialect(exec.dialect || (QueryKitConfig as any).defaultDialect);
+    const dialect = exec.dialect;
+    const candidates = this.triggerQueriesByDialect(dialect);
+    const known = Boolean(dialect && ['sqlite', 'mysql', 'postgres', 'mssql', 'oracle'].includes(dialect));
     for (const c of candidates) {
       try {
         const res = await exec.executeQuery(c.sql, []);
         const rows = (res?.data as any[]) || [];
-        const names = rows.map(c.map).filter(Boolean);
-        if (names.length || rows.length >= 0) return names;
+        const names = rows.map(c.map).filter((n): n is string => Boolean(n));
+        if (known || names.length) return names;
       } catch { /* try next */ }
     }
     return [];

@@ -22,5 +22,8 @@ test-watch:
 pack: clean build
 	npm pack
 
-publish: clean build test
-	npm publish --access public 
+# Publishing is done by GitHub Actions (see RELEASE.md). Do not npm publish from a laptop.
+publish:
+	@echo "Merge to main. CI publishes to npm and creates GitHub Release vX.Y.Z. Owner must set the NPM_TOKEN secret."
+	@echo "See RELEASE.md"
+	@exit 1

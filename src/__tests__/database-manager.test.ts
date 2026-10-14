@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { MultiDatabaseManager, type MultiDatabaseConfig } from '../database-manager';
 import { BaseDatabaseAdapter, type DatabaseConfig } from '../database-adapters/base-adapter';
 
@@ -18,6 +18,27 @@ class FailingAdapter extends BaseDatabaseAdapter {
 }
 
 describe('MultiDatabaseManager', () => {
+  beforeEach(() => MultiDatabaseManager.resetInstance());
+
+  it('throws when getInstance is called with no config before init', () => {
+    expect(() => MultiDatabaseManager.getInstance()).toThrow(/not initialized/);
+  });
+
+  it('accepts a DatabaseExecutor factory (README BetterSqlite3Executor shape)', async () => {
+    const cfg: MultiDatabaseConfig = {
+      defaultDatabase: 'primary',
+      databases: { primary: { name: 'primary', type: 'sqlite', filePath: ':memory:' } },
+    };
+    const mdm = MultiDatabaseManager.getInstance(cfg);
+    const exec = {
+      dialect: 'sqlite' as const,
+      executeQuery: async () => ({ data: [{ c: 1 }] }),
+    };
+    await mdm.initialize(() => exec as any);
+    const out = await mdm.executeOnMultiple(['primary'], 'SELECT 1');
+    expect(out.primary.data[0].c).toBe(1);
+  });
+
   it('initializes and executes on multiple databases', async () => {
     const cfg: MultiDatabaseConfig = {
       defaultDatabase: 'db1',

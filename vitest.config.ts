@@ -1,17 +1,27 @@
-// vitest.config.ts
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    include: ['src/__tests__/**/*.test.ts'],
     coverage: {
-      enabled: true, // Ensure coverage is enabled
+      enabled: false,
+      provider: 'v8',
+      include: ['src/**/*.ts'],
       exclude: [
-        'website/**', // Excludes all files within the 'src/utils' folder
-        'node_modules/**',
-        'dist/**',
-        'vite.config.ts',
-        'covarage/**', // Excludes all files directly within 'src/mock-data'
+        'src/__tests__/**',
+        'src/index.ts',
+        'src/types.ts',
+        'src/sqlite.ts',
+        'src/postgres.ts',
+        'src/mysql.ts',
+        'src/oracle.ts',
+        'src/mssql.ts',
+        'src/memory.ts',
+        'src/engine/dialect.ts',
+        'src/engine/conformance.ts',
       ],
     },
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

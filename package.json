@@ -1,41 +1,399 @@
 {
   "name": "iagate-querykit",
-  "version": "0.1.46",
-  "description": "QueryKit: lightweight TypeScript query toolkit with models, views, triggers, events, scheduler and adapters (better-sqlite3).",
+  "version": "1.0.0",
+  "description": "QueryKit: typed SQL toolkit with a query builder, models, views, triggers, events, scheduler, migrations, and first-party adapters for SQLite, MySQL, PostgreSQL, Oracle, and SQL Server.",
   "private": false,
   "type": "module",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json",
-    "./config": { "types": "./dist/config.d.ts", "import": "./dist/config.js" },
-    "./raw": { "types": "./dist/raw.d.ts", "import": "./dist/raw.js" },
-    "./scheduler": { "types": "./dist/scheduler.d.ts", "import": "./dist/scheduler.js" },
-    "./event-manager": { "types": "./dist/event-manager.d.ts", "import": "./dist/event-manager.js" },
-    "./simulation-manager": { "types": "./dist/simulation-manager.d.ts", "import": "./dist/simulation-manager.js" },
-    "./trigger-manager": { "types": "./dist/trigger-manager.d.ts", "import": "./dist/trigger-manager.js" },
-    "./view-manager": { "types": "./dist/view-manager.d.ts", "import": "./dist/view-manager.js" },
-    "./parallel-query": { "types": "./dist/parallel-query.d.ts", "import": "./dist/parallel-query.js" },
-    "./database-adapters/base-adapter": { "types": "./dist/database-adapters/base-adapter.d.ts", "import": "./dist/database-adapters/base-adapter.js" },
-    "./database-manager": { "types": "./dist/database-manager.d.ts", "import": "./dist/database-manager.js" },
-    "./query-builder": { "types": "./dist/query-builder.d.ts", "import": "./dist/query-builder.js" },
-    "./model": { "types": "./dist/model.d.ts", "import": "./dist/model.js" },
-    "./table": { "types": "./dist/table.d.ts", "import": "./dist/table.js" },
-    "./types": { "types": "./dist/types.d.ts", "import": "./dist/types.js" },
-    "./adapters/better-sqlite3": { "types": "./dist/adapters/better-sqlite3.d.ts", "import": "./dist/adapters/better-sqlite3.js" },
-    "./adapters/mysql": { "types": "./dist/adapters/mysql.d.ts", "import": "./dist/adapters/mysql.js" },
-    "./adapters/postgresql": { "types": "./dist/adapters/postgresql.d.ts", "import": "./dist/adapters/postgresql.js" },
-    "./adapters/oracle": { "types": "./dist/adapters/oracle.d.ts", "import": "./dist/adapters/oracle.js" },
-    "./adapters/sqlserver": { "types": "./dist/adapters/sqlserver.d.ts", "import": "./dist/adapters/sqlserver.js" }
+    "./config": {
+      "import": {
+        "types": "./dist/config.d.ts",
+        "default": "./dist/config.js"
+      },
+      "require": {
+        "types": "./dist/config.d.cts",
+        "default": "./dist/config.cjs"
+      },
+      "default": "./dist/config.js"
+    },
+    "./raw": {
+      "import": {
+        "types": "./dist/raw.d.ts",
+        "default": "./dist/raw.js"
+      },
+      "require": {
+        "types": "./dist/raw.d.cts",
+        "default": "./dist/raw.cjs"
+      },
+      "default": "./dist/raw.js"
+    },
+    "./scheduler": {
+      "import": {
+        "types": "./dist/scheduler.d.ts",
+        "default": "./dist/scheduler.js"
+      },
+      "require": {
+        "types": "./dist/scheduler.d.cts",
+        "default": "./dist/scheduler.cjs"
+      },
+      "default": "./dist/scheduler.js"
+    },
+    "./event-manager": {
+      "import": {
+        "types": "./dist/event-manager.d.ts",
+        "default": "./dist/event-manager.js"
+      },
+      "require": {
+        "types": "./dist/event-manager.d.cts",
+        "default": "./dist/event-manager.cjs"
+      },
+      "default": "./dist/event-manager.js"
+    },
+    "./simulation-manager": {
+      "import": {
+        "types": "./dist/simulation-manager.d.ts",
+        "default": "./dist/simulation-manager.js"
+      },
+      "require": {
+        "types": "./dist/simulation-manager.d.cts",
+        "default": "./dist/simulation-manager.cjs"
+      },
+      "default": "./dist/simulation-manager.js"
+    },
+    "./trigger-manager": {
+      "import": {
+        "types": "./dist/trigger-manager.d.ts",
+        "default": "./dist/trigger-manager.js"
+      },
+      "require": {
+        "types": "./dist/trigger-manager.d.cts",
+        "default": "./dist/trigger-manager.cjs"
+      },
+      "default": "./dist/trigger-manager.js"
+    },
+    "./view-manager": {
+      "import": {
+        "types": "./dist/view-manager.d.ts",
+        "default": "./dist/view-manager.js"
+      },
+      "require": {
+        "types": "./dist/view-manager.d.cts",
+        "default": "./dist/view-manager.cjs"
+      },
+      "default": "./dist/view-manager.js"
+    },
+    "./parallel-query": {
+      "import": {
+        "types": "./dist/parallel-query.d.ts",
+        "default": "./dist/parallel-query.js"
+      },
+      "require": {
+        "types": "./dist/parallel-query.d.cts",
+        "default": "./dist/parallel-query.cjs"
+      },
+      "default": "./dist/parallel-query.js"
+    },
+    "./database-adapters/base-adapter": {
+      "import": {
+        "types": "./dist/database-adapters/base-adapter.d.ts",
+        "default": "./dist/database-adapters/base-adapter.js"
+      },
+      "require": {
+        "types": "./dist/database-adapters/base-adapter.d.cts",
+        "default": "./dist/database-adapters/base-adapter.cjs"
+      },
+      "default": "./dist/database-adapters/base-adapter.js"
+    },
+    "./database-manager": {
+      "import": {
+        "types": "./dist/database-manager.d.ts",
+        "default": "./dist/database-manager.js"
+      },
+      "require": {
+        "types": "./dist/database-manager.d.cts",
+        "default": "./dist/database-manager.cjs"
+      },
+      "default": "./dist/database-manager.js"
+    },
+    "./querykit": {
+      "import": {
+        "types": "./dist/querykit.d.ts",
+        "default": "./dist/querykit.js"
+      },
+      "require": {
+        "types": "./dist/querykit.d.cts",
+        "default": "./dist/querykit.cjs"
+      },
+      "default": "./dist/querykit.js"
+    },
+    "./query-builder": {
+      "import": {
+        "types": "./dist/query-builder.d.ts",
+        "default": "./dist/query-builder.js"
+      },
+      "require": {
+        "types": "./dist/query-builder.d.cts",
+        "default": "./dist/query-builder.cjs"
+      },
+      "default": "./dist/query-builder.js"
+    },
+    "./model": {
+      "import": {
+        "types": "./dist/model.d.ts",
+        "default": "./dist/model.js"
+      },
+      "require": {
+        "types": "./dist/model.d.cts",
+        "default": "./dist/model.cjs"
+      },
+      "default": "./dist/model.js"
+    },
+    "./table": {
+      "import": {
+        "types": "./dist/table.d.ts",
+        "default": "./dist/table.js"
+      },
+      "require": {
+        "types": "./dist/table.d.cts",
+        "default": "./dist/table.cjs"
+      },
+      "default": "./dist/table.js"
+    },
+    "./types": {
+      "import": {
+        "types": "./dist/types.d.ts",
+        "default": "./dist/types.js"
+      },
+      "require": {
+        "types": "./dist/types.d.cts",
+        "default": "./dist/types.cjs"
+      },
+      "default": "./dist/types.js"
+    },
+    "./seed": {
+      "import": {
+        "types": "./dist/seed.d.ts",
+        "default": "./dist/seed.js"
+      },
+      "require": {
+        "types": "./dist/seed.d.cts",
+        "default": "./dist/seed.cjs"
+      },
+      "default": "./dist/seed.js"
+    },
+    "./migration-manager": {
+      "import": {
+        "types": "./dist/migration-manager.d.ts",
+        "default": "./dist/migration-manager.js"
+      },
+      "require": {
+        "types": "./dist/migration-manager.d.cts",
+        "default": "./dist/migration-manager.cjs"
+      },
+      "default": "./dist/migration-manager.js"
+    },
+    "./migration-dsl": {
+      "import": {
+        "types": "./dist/migration-dsl.d.ts",
+        "default": "./dist/migration-dsl.js"
+      },
+      "require": {
+        "types": "./dist/migration-dsl.d.cts",
+        "default": "./dist/migration-dsl.cjs"
+      },
+      "default": "./dist/migration-dsl.js"
+    },
+    "./relations-resolver": {
+      "import": {
+        "types": "./dist/relations-resolver.d.ts",
+        "default": "./dist/relations-resolver.js"
+      },
+      "require": {
+        "types": "./dist/relations-resolver.d.cts",
+        "default": "./dist/relations-resolver.cjs"
+      },
+      "default": "./dist/relations-resolver.js"
+    },
+    "./adapters": {
+      "import": {
+        "types": "./dist/adapters/index.d.ts",
+        "default": "./dist/adapters/index.js"
+      },
+      "require": {
+        "types": "./dist/adapters/index.d.cts",
+        "default": "./dist/adapters/index.cjs"
+      },
+      "default": "./dist/adapters/index.js"
+    },
+    "./adapters/better-sqlite3": {
+      "import": {
+        "types": "./dist/adapters/better-sqlite3.d.ts",
+        "default": "./dist/adapters/better-sqlite3.js"
+      },
+      "require": {
+        "types": "./dist/adapters/better-sqlite3.d.cts",
+        "default": "./dist/adapters/better-sqlite3.cjs"
+      },
+      "default": "./dist/adapters/better-sqlite3.js"
+    },
+    "./adapters/mysql": {
+      "import": {
+        "types": "./dist/adapters/mysql.d.ts",
+        "default": "./dist/adapters/mysql.js"
+      },
+      "require": {
+        "types": "./dist/adapters/mysql.d.cts",
+        "default": "./dist/adapters/mysql.cjs"
+      },
+      "default": "./dist/adapters/mysql.js"
+    },
+    "./adapters/postgresql": {
+      "import": {
+        "types": "./dist/adapters/postgresql.d.ts",
+        "default": "./dist/adapters/postgresql.js"
+      },
+      "require": {
+        "types": "./dist/adapters/postgresql.d.cts",
+        "default": "./dist/adapters/postgresql.cjs"
+      },
+      "default": "./dist/adapters/postgresql.js"
+    },
+    "./adapters/oracle": {
+      "import": {
+        "types": "./dist/adapters/oracle.d.ts",
+        "default": "./dist/adapters/oracle.js"
+      },
+      "require": {
+        "types": "./dist/adapters/oracle.d.cts",
+        "default": "./dist/adapters/oracle.cjs"
+      },
+      "default": "./dist/adapters/oracle.js"
+    },
+    "./adapters/sqlserver": {
+      "import": {
+        "types": "./dist/adapters/sqlserver.d.ts",
+        "default": "./dist/adapters/sqlserver.js"
+      },
+      "require": {
+        "types": "./dist/adapters/sqlserver.d.cts",
+        "default": "./dist/adapters/sqlserver.cjs"
+      },
+      "default": "./dist/adapters/sqlserver.js"
+    },
+    "./engine": {
+      "import": {
+        "types": "./dist/engine.d.ts",
+        "default": "./dist/engine.js"
+      },
+      "require": {
+        "types": "./dist/engine.d.cts",
+        "default": "./dist/engine.cjs"
+      },
+      "default": "./dist/engine.js"
+    },
+    "./sqlite": {
+      "import": {
+        "types": "./dist/sqlite.d.ts",
+        "default": "./dist/sqlite.js"
+      },
+      "require": {
+        "types": "./dist/sqlite.d.cts",
+        "default": "./dist/sqlite.cjs"
+      },
+      "default": "./dist/sqlite.js"
+    },
+    "./postgres": {
+      "import": {
+        "types": "./dist/postgres.d.ts",
+        "default": "./dist/postgres.js"
+      },
+      "require": {
+        "types": "./dist/postgres.d.cts",
+        "default": "./dist/postgres.cjs"
+      },
+      "default": "./dist/postgres.js"
+    },
+    "./mysql": {
+      "import": {
+        "types": "./dist/mysql.d.ts",
+        "default": "./dist/mysql.js"
+      },
+      "require": {
+        "types": "./dist/mysql.d.cts",
+        "default": "./dist/mysql.cjs"
+      },
+      "default": "./dist/mysql.js"
+    },
+    "./oracle": {
+      "import": {
+        "types": "./dist/oracle.d.ts",
+        "default": "./dist/oracle.js"
+      },
+      "require": {
+        "types": "./dist/oracle.d.cts",
+        "default": "./dist/oracle.cjs"
+      },
+      "default": "./dist/oracle.js"
+    },
+    "./mssql": {
+      "import": {
+        "types": "./dist/mssql.d.ts",
+        "default": "./dist/mssql.js"
+      },
+      "require": {
+        "types": "./dist/mssql.d.cts",
+        "default": "./dist/mssql.cjs"
+      },
+      "default": "./dist/mssql.js"
+    },
+    "./memory": {
+      "import": {
+        "types": "./dist/memory.d.ts",
+        "default": "./dist/memory.js"
+      },
+      "require": {
+        "types": "./dist/memory.d.cts",
+        "default": "./dist/memory.cjs"
+      },
+      "default": "./dist/memory.js"
+    }
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/dialects/register.js",
+    "./dist/dialects/register.cjs",
+    "./dist/sqlite.js",
+    "./dist/sqlite.cjs",
+    "./dist/postgres.js",
+    "./dist/postgres.cjs",
+    "./dist/mysql.js",
+    "./dist/mysql.cjs",
+    "./dist/oracle.js",
+    "./dist/oracle.cjs",
+    "./dist/mssql.js",
+    "./dist/mssql.cjs",
+    "./dist/memory.js",
+    "./dist/memory.cjs"
+  ],
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "query",
@@ -43,6 +401,8 @@
     "sql",
     "sqlite",
     "better-sqlite3",
+    "postgres",
+    "mysql",
     "trigger",
     "view",
     "model",
@@ -52,31 +412,37 @@
   ],
   "scripts": {
     "clean": "rimraf dist",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsup",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "vitest run src/__tests__/integration",
+    "test:db:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "test:db:down": "docker compose -f docker-compose.test.yml down -v",
     "coverage": "vitest run --coverage",
-    "check": "npm run typecheck && npm test",
-    "prepack": "npm run clean && npm run build && npm run test",
+    "check": "npm run typecheck && npm test && npm run build",
+    "prepack": "npm run build",
     "docs:dev": "docusaurus start website",
     "docs:build": "docusaurus build website",
     "docs:serve": "docusaurus serve website",
     "docs": "npm run docs:build",
     "api:docs": "typedoc",
-    "docs:all": "npm run api:docs && npm run docs:build"
+    "docs:all": "npm run api:docs && npm run docs:build",
+    "consumer:verify": "node scripts/consumer-verify.mjs",
+    "bench": "node scripts/bench.mjs",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "prepublishOnly": "npm run secret-scan"
   },
   "author": "Felipe Oliveira <felipeoliveiradeveloper@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/felipeoliveiradev/iagate-querykit.git",
-    "directory": "packages/querykit"
+    "url": "git+https://github.com/felipeoliveiradev/iagate-querykit.git"
   },
   "bugs": {
     "url": "https://github.com/felipeoliveiradev/iagate-querykit/issues"
   },
-  "homepage": "https://github.com/felipeoliveiradev/iagate-querykit/tree/main/packages/querykit#readme",
+  "homepage": "https://github.com/felipeoliveiradev/iagate-querykit#readme",
   "engines": {
     "node": ">=18"
   },
@@ -89,10 +455,26 @@
     "access": "public"
   },
   "peerDependencies": {
-    "better-sqlite3": ""
+    "better-sqlite3": "^11.0.0",
+    "mssql": "^11.0.0",
+    "mysql2": "^3.0.0",
+    "oracledb": "^6.0.0",
+    "pg": "^8.0.0"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "oracledb": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "mssql": {
       "optional": true
     }
   },
@@ -100,34 +482,25 @@
     "@docusaurus/core": "^3.8.1",
     "@docusaurus/preset-classic": "^3.8.1",
     "@docusaurus/theme-search-algolia": "^3.8.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.17.1",
+    "@vitest/coverage-v8": "^2.1.9",
+    "better-sqlite3": "^11.10.0",
+    "fast-check": "^4.10.2",
+    "mssql": "^11.0.2",
+    "mysql2": "^3.14.1",
+    "oracledb": "^6.10.0",
+    "pg": "^8.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "rimraf": "^5.0.5",
+    "tsup": "^8.5.0",
     "typedoc": "^0.26.11",
-    "typedoc-plugin-markdown": "^4.8.1",
+    "typedoc-plugin-markdown": "4.8.1",
     "typescript": "^5.4.0",
     "vitest": "^2.0.5"
   },
-  "vitest": {
-    "coverage": {
-      "provider": "v8",
-      "all": true,
-      "include": [
-        "src/**/*.ts"
-      ],
-      "exclude": [
-        "**/node_modules/**",
-        "**/dist/**",
-        "website/**",
-        "website",
-        "website/build",
-        "**/website/**",
-        "**/website/build/**",
-        "src/index.ts",
-        "src/types.ts"
-      ],
-      "extension": [".ts"]
-    }
+  "dependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.64.6"
   }
 }

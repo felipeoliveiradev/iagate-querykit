@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  secrets:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          VER=8.24.3
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Scan full git history
+        run: gitleaks detect --source . --log-opts="--all" --redact=100 --verbose --config .gitleaks.toml
+      - name: Scan working tree
+        run: gitleaks detect --source . --no-git --redact=100 --verbose --config .gitleaks.toml
+
+  # Integration tests create uniquely named databases on these loopback
+  # service containers and DROP them afterwards. They never read
+  # DATABASE_URL / POSTGRES_HOST / MYSQL_HOST from secrets or the repo.
+  check:
+    name: typecheck-test-build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: querykit
+          POSTGRES_PASSWORD: querykit
+          POSTGRES_DB: querykit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U querykit -d querykit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: querykit
+          MYSQL_DATABASE: querykit
+          MYSQL_USER: querykit
+          MYSQL_PASSWORD: querykit
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uquerykit -pquerykit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run secret-scan
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  publish:
+    name: npm-publish
+    needs: [check, secrets]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    concurrency:
+      group: npm-publish
+      cancel-in-progress: false
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: querykit
+          POSTGRES_PASSWORD: querykit
+          POSTGRES_DB: querykit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U querykit -d querykit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: querykit
+          MYSQL_DATABASE: querykit
+          MYSQL_USER: querykit
+          MYSQL_PASSWORD: querykit
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uquerykit -pquerykit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm run secret-scan
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Pre-publish secret scan (packed surface)
+        run: npm run secret-scan
+      - name: Publish if version is new
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CREATE_GITHUB_RELEASE: '1'
+        run: bash scripts/publish-if-new.sh

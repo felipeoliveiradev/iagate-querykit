@@ -1,0 +1,68 @@
+# Throwaway databases for tests only. Destroyed when the compose project is removed.
+# tmpfs: data never touches the host disk.
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: querykit
+      POSTGRES_PASSWORD: querykit
+      POSTGRES_DB: querykit
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U querykit -d querykit']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - '3306:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: querykit
+      MYSQL_DATABASE: querykit
+      MYSQL_USER: querykit
+      MYSQL_PASSWORD: querykit
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uquerykit', '-pquerykit']
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  # Optional. `docker compose --profile full -f docker-compose.test.yml up`
+  # Each image wants ~2 GiB RAM; do not start both next to local Postgres/MySQL
+  # on a small VM. Tests only connect to 127.0.0.1.
+  mssql:
+    profiles: [full]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    ports:
+      - '1433:1433'
+    environment:
+      ACCEPT_EULA: 'Y'
+      MSSQL_SA_PASSWORD: QueryKit_123
+      MSSQL_PID: Developer
+    healthcheck:
+      test: ['CMD-SHELL', '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P QueryKit_123 -C -Q "SELECT 1" || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  oracle:
+    profiles: [full]
+    image: gvenzl/oracle-free:23-slim-faststart
+    ports:
+      - '1521:1521'
+    environment:
+      ORACLE_PASSWORD: QueryKit123
+      APP_USER: querykit
+      APP_USER_PASSWORD: QueryKit123
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh']
+      interval: 15s
+      timeout: 10s
+      retries: 30

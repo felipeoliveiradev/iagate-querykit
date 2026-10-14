@@ -19,12 +19,17 @@ describe('Model.save', () => {
   let exec: MockExec;
   beforeEach(() => { exec = new MockExec(); setDefaultExecutor(exec as any); });
 
+  it('throws when delete() has no id', async () => {
+    const u = new User();
+    await expect(u.delete()).rejects.toThrow(/without an id/);
+  });
+
   it('inserts only fillable fields when id not set', async () => {
     const u = new User();
     u.fill({ name: 'A', email: 'a@example.com', role: 'admin' });
     await u.save();
     const last = exec.runs.at(-1)!;
-    expect(last.sql).toMatch(/INSERT INTO users/);
+    expect(last.sql).toMatch(/INSERT INTO "users"/);
     expect(last.sql).not.toContain('role');
   });
 
@@ -34,15 +39,26 @@ describe('Model.save', () => {
     u.fill({ name: 'B', created_at: 'x' });
     await u.save();
     const last = exec.runs.at(-1)!;
-    expect(last.sql).toMatch(/UPDATE users SET/);
+    expect(last.sql).toMatch(/UPDATE "users" SET/);
     expect(last.sql).not.toContain('created_at');
+  });
+
+  it('updates when id is 0 (not treated as missing)', async () => {
+    const u = new User() as any;
+    u.id = 0;
+    u.fill({ name: 'Zero' });
+    await u.save();
+    const last = exec.runs.at(-1)!;
+    expect(last.sql).toMatch(/UPDATE "users" SET/);
+    expect(last.sql).toMatch(/WHERE "id" = \?/);
+    expect(last.bindings.at(-1)).toBe(0);
   });
 
   it('delete() removes by id', async () => {
     const u = new User() as any; u.id = 7;
     await u.delete();
     const last = exec.runs.at(-1)!;
-    expect(last.sql).toMatch(/DELETE FROM users WHERE/);
+    expect(last.sql).toMatch(/DELETE FROM "users" WHERE/);
   })
 });
 
