@@ -159,3 +159,19 @@ Ran against the registry tarball (not this branch):
 | `peerDependencies.better-sqlite3` | `""`. |
 
 These match the source audit and are addressed in 1.0.0.
+
+---
+
+## 11. Consumer verification of packed `1.0.0` (this branch)
+
+`node scripts/consumer-verify.mjs` packed `iagate-querykit-1.0.0.tgz` and installed it into four fresh projects. Exact results:
+
+| Consumer | Result |
+| --- | --- |
+| `npm pack` | **PASS** — `iagate-querykit-1.0.0.tgz` |
+| ESM `import` + SQLite insert/select | **PASS** — `esm-ok esm@x.com` |
+| CJS `require` + SQLite insert/select | **PASS** — `cjs-ok cjs@x.com` |
+| TypeScript `moduleResolution: NodeNext` (`tsc` + emit + run) | **PASS** — `tsc ok`, `nodenext-ok nodenext@x.com` |
+| TypeScript `moduleResolution: bundler` (`tsc --noEmit`) | **PASS** — `tsc ok` |
+
+Local unit/integration: **278 passed**, 3 skipped (Postgres/MySQL — no Docker/`POSTGRES_HOST`/`MYSQL_HOST` in this environment). CI workflow starts Postgres 16 and MySQL 8 service containers so those tests run on PRs.
