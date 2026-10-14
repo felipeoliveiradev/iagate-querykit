@@ -452,7 +452,7 @@ Pedido do owner: estudar tudo, ser adversário, escrever testes de propriedade/f
 - `src/__tests__/sql-fuzz.test.ts` — fast-check: idents, placeholders, IN vazio, clone, `whereNotIn` não-array, `orWhereIn` parentizado, `orderBy` direção, Date/JSON bindings.
 - `src/__tests__/readme-examples.test.ts` — cada exemplo do README/docs (kit, CRUD, raw/IN/NULL/BETWEEN/EXISTS, views+triggers, scheduler, parallel, simulation, multi-db, tx, union/paginate, aggregates, period, Model).
 - `src/__tests__/public-edges.test.ts` — todos os métodos públicos com bordas pedidas (null/undefined, IN vazio, Date/BigInt/Buffer/JSON, reserved words, unicode, whereGroup, joins+alias, subquery, upsert, paginação, tx rollback, concorrência, increment NaN, `insert().all()`, FIND_IN_SET, JSON contains).
-- Integração Postgres 16 + MySQL 8 **sempre roda** (default `127.0.0.1`; serviços instalados no VM via `pg_ctlcluster` / `mysqld` porque `policy-rc.d` bloqueia `service`).
+- Integração Postgres 16 + MySQL 8 **só em banco throwaway no loopback** (`127.0.0.1`). Cada suite cria `qk_e_<pid>_<rand>` e dá `DROP DATABASE` no `afterAll`. `POSTGRES_HOST` / `DATABASE_URL` / credenciais de ambiente são **ignorados**. Host que não seja loopback lança. CI usa service containers efêmeros; local: `docker-compose.test.yml` (tmpfs) ou o cluster de teste iniciado nesta VM.
 
 **Suite desta rodada:** 354 passou / 0 pulados. Typecheck strict passou. Postgres e MySQL live passaram.
 

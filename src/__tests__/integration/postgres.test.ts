@@ -1,25 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setDefaultExecutor, resetQueryKitConfig } from '../../config.js';
 import { QueryBuilder } from '../../query-builder.js';
-import { PostgresExecutor } from '../../adapters/postgresql.js';
+import { openEphemeralPostgres, type EphemeralHandle } from './ephemeral.js';
+import type { PostgresExecutor } from '../../adapters/postgresql.js';
 
-const host = process.env.POSTGRES_HOST || '127.0.0.1';
-const describePg = describe;
-
-describePg('postgres integration', () => {
+describe('postgres integration (throwaway loopback only)', () => {
+  let handle: EphemeralHandle<PostgresExecutor>;
   let exec: PostgresExecutor;
 
   beforeAll(async () => {
     resetQueryKitConfig();
-    exec = new PostgresExecutor({
-      host,
-      port: Number(process.env.POSTGRES_PORT || 5432),
-      user: process.env.POSTGRES_USER,
-      password: process.env.POSTGRES_PASSWORD,
-      database: process.env.POSTGRES_DB,
-    });
+    handle = await openEphemeralPostgres();
+    exec = handle.exec;
     setDefaultExecutor(exec);
-    await exec.executeQuery('DROP TABLE IF EXISTS qk_users', []);
     await exec.executeQuery(
       'CREATE TABLE qk_users (id SERIAL PRIMARY KEY, email TEXT, active INT)',
       [],
@@ -28,19 +21,18 @@ describePg('postgres integration', () => {
 
   afterAll(async () => {
     try {
-      await exec.executeQuery('DROP TABLE IF EXISTS qk_users', []);
+      await handle?.destroy();
     } finally {
-      await exec.close();
       resetQueryKitConfig();
     }
   });
 
   it('inserts, selects, updates, deletes with $n conversion', async () => {
-    const ins = await new QueryBuilder('qk_users').insert({ email: 'pg@x.com', active: 1 }).make();
+    const ins = await new QueryBuilder('qk_users').insert({ email: 'pg@example.test', active: 1 }).make();
     expect(ins.changes).toBeGreaterThanOrEqual(1);
 
-    const row = await new QueryBuilder('qk_users').where('email', '=', 'pg@x.com').first<{ id: number; email: string }>();
-    expect(row?.email).toBe('pg@x.com');
+    const row = await new QueryBuilder('qk_users').where('email', '=', 'pg@example.test').first<{ id: number; email: string }>();
+    expect(row?.email).toBe('pg@example.test');
     expect(row?.id).toBeTruthy();
 
     await new QueryBuilder('qk_users').where('id', '=', row!.id).update({ active: 0 }).make();
@@ -52,7 +44,6 @@ describePg('postgres integration', () => {
   });
 
   it('handles reserved words, empty IN, null, JSON, pagination, concurrent reads', async () => {
-    await exec.executeQuery('DROP TABLE IF EXISTS "order"', []);
     await exec.executeQuery('CREATE TABLE "order" (id SERIAL PRIMARY KEY, "select" TEXT, meta JSONB, deleted_at TEXT)', []);
     await new QueryBuilder('order').insert({ select: 'ok', meta: { a: 1 } }).make();
     const row = await new QueryBuilder('order').where('select', '=', 'ok').first<any>();
@@ -70,32 +61,31 @@ describePg('postgres integration', () => {
   });
 
   it('offset without limit, upsert, and JSON containment', async () => {
-    await exec.executeQuery('DROP TABLE IF EXISTS qk_extra', []);
     await exec.executeQuery(
       'CREATE TABLE qk_extra (id SERIAL PRIMARY KEY, email TEXT UNIQUE, meta JSONB)',
       [],
     );
-    await new QueryBuilder('qk_extra').insert({ email: 'a@pg.com', meta: { a: 1 } }).make();
-    await new QueryBuilder('qk_extra').insert({ email: 'b@pg.com', meta: { a: 2 } }).make();
+    await new QueryBuilder('qk_extra').insert({ email: 'a@example.test', meta: { a: 1 } }).make();
+    await new QueryBuilder('qk_extra').insert({ email: 'b@example.test', meta: { a: 2 } }).make();
     const skipped = await new QueryBuilder('qk_extra').orderBy('id').offset(1).all<any>();
     expect(skipped).toHaveLength(1);
-    expect(skipped[0].email).toBe('b@pg.com');
+    expect(skipped[0].email).toBe('b@example.test');
 
-    await new QueryBuilder('qk_extra').updateOrInsert({ email: 'a@pg.com' }, { meta: { a: 9 } }).make();
-    const updated = await new QueryBuilder('qk_extra').where('email', '=', 'a@pg.com').first<any>();
+    await new QueryBuilder('qk_extra').updateOrInsert({ email: 'a@example.test' }, { meta: { a: 9 } }).make();
+    const updated = await new QueryBuilder('qk_extra').where('email', '=', 'a@example.test').first<any>();
     expect(updated.meta).toEqual({ a: 9 });
 
     const hit = await new QueryBuilder('qk_extra').whereJsonContains('meta', { a: 9 }).all<any>();
     expect(hit).toHaveLength(1);
-    expect(hit[0].email).toBe('a@pg.com');
+    expect(hit[0].email).toBe('a@example.test');
   });
 
   it('rolls back a transaction', async () => {
     await exec.transaction(async (tx) => {
-      await tx.executeQuery('INSERT INTO qk_users (email, active) VALUES ($1, $2)', ['tx@pg.com', 1]);
+      await tx.executeQuery('INSERT INTO qk_users (email, active) VALUES ($1, $2)', ['tx@example.test', 1]);
       throw new Error('nope');
     }).catch((e) => e);
-    const rows = await exec.executeQuery('SELECT * FROM qk_users WHERE email = $1', ['tx@pg.com']);
+    const rows = await exec.executeQuery('SELECT * FROM qk_users WHERE email = $1', ['tx@example.test']);
     expect(rows.data.length).toBe(0);
   });
 });

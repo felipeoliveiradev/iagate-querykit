@@ -12,6 +12,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'release' && github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Integration tests create uniquely named databases on these loopback
+  # service containers and DROP them afterwards. They never read
+  # DATABASE_URL / POSTGRES_HOST / MYSQL_HOST from secrets or the repo.
   check:
     name: typecheck-test-build
     runs-on: ubuntu-latest
@@ -43,17 +46,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 15
-    env:
-      POSTGRES_HOST: 127.0.0.1
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: querykit
-      POSTGRES_PASSWORD: querykit
-      POSTGRES_DB: querykit
-      MYSQL_HOST: 127.0.0.1
-      MYSQL_PORT: 3306
-      MYSQL_USER: querykit
-      MYSQL_PASSWORD: querykit
-      MYSQL_DATABASE: querykit
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -76,6 +68,34 @@ jobs:
     concurrency:
       group: npm-publish
       cancel-in-progress: false
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: querykit
+          POSTGRES_PASSWORD: querykit
+          POSTGRES_DB: querykit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U querykit -d querykit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: querykit
+          MYSQL_DATABASE: querykit
+          MYSQL_USER: querykit
+          MYSQL_PASSWORD: querykit
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uquerykit -pquerykit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -1,0 +1,35 @@
+# Throwaway databases for tests only. Destroyed when the compose project is removed.
+# tmpfs: data never touches the host disk.
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: querykit
+      POSTGRES_PASSWORD: querykit
+      POSTGRES_DB: querykit
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U querykit -d querykit']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - '3306:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: querykit
+      MYSQL_DATABASE: querykit
+      MYSQL_USER: querykit
+      MYSQL_PASSWORD: querykit
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uquerykit', '-pquerykit']
+      interval: 5s
+      timeout: 5s
+      retries: 15

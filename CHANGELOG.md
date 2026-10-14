@@ -80,5 +80,5 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - `whereFindInSet` / `whereArrayContains` quote identifiers and match CSV tokens (not substrings).
 - `whereIf` accepts the 2-arg equality form; `whereBetween` / `having` reject bad tuples / `undefined`.
 - Unicode identifiers (`\p{L}\p{N}`) are allowed when quoted.
-- Live Postgres 16 + MySQL 8 integration tests run in CI and on a local VM (reserved words, empty IN, null, JSON, pagination, concurrent reads, rollback, upsert, FIND_IN_SET).
+- Live Postgres 16 + MySQL 8 integration tests run only against throwaway loopback databases (CI service containers / `docker-compose.test.yml` / local test cluster). Each suite `CREATE DATABASE qk_e_*` and `DROP`s it after. Ambient `POSTGRES_*` / `MYSQL_*` / `DATABASE_URL` are ignored. Non-loopback hosts are refused.
 - Property tests (`fast-check`) and every README/docs example run as Vitest cases.
