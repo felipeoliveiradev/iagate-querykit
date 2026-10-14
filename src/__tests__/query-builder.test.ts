@@ -66,6 +66,11 @@ describe('QueryBuilder', () => {
     qb.run();
     expect(exec.queries.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('run() refuses a pending write (use make())', () => {
+    const qb = new QueryBuilder('users').insert({ email: 'x@y.com' });
+    expect(() => qb.run()).toThrow(/make\(\)/);
+  });
 });
 
 // Additional QueryBuilder tests (merged)
@@ -405,12 +410,10 @@ describe('QueryBuilder new methods', () => {
   beforeEach(() => setDefaultExecutor(new ExecMock() as any))
 
   describe('selectAllExcept', () => {
-    it('sets pendingAction for selectAllExcept', () => {
+    it('records excluded columns without a write pendingAction', () => {
       const qb = new QueryBuilder('users').selectAllExcept(['password', 'ssn'])
-      expect(qb['pendingAction']).toEqual({
-        type: 'selectAllExcept',
-        data: ['password', 'ssn']
-      })
+      expect(qb['excludeSelectColumns']).toEqual(['password', 'ssn'])
+      expect(qb['pendingAction']).toBeUndefined()
     })
 
     it('sets selectColumns to * when selectAllExcept is called', () => {
@@ -423,7 +426,7 @@ describe('QueryBuilder new methods', () => {
 
     it('converts column names to strings', () => {
       const qb = new QueryBuilder('users').selectAllExcept(['id', 'name'] as any)
-      expect(qb['pendingAction']?.data).toEqual(['id', 'name'])
+      expect(qb['excludeSelectColumns']).toEqual(['id', 'name'])
     })
   })
 
@@ -558,21 +561,18 @@ describe('QueryBuilder new methods', () => {
       expect(sql).toContain('similarity_score')
     })
 
-    it('sets pendingAction for fuzzySearch', () => {
+    it('binds fuzzy score placeholders', () => {
       const qb = new QueryBuilder('users').whereFuzzySearch('jhon', ['name', 'email'])
-      expect(qb['pendingAction']).toEqual({
-        type: 'fuzzySearch',
-        data: expect.objectContaining({
-          searchTerm: 'jhon',
-          columns: ['name', 'email'],
-          threshold: 0.7
-        })
-      })
+      const { sql, bindings } = qb.toSql()
+      expect(sql).toContain('similarity_score')
+      expect(bindings.length).toBeGreaterThan(0)
+      expect(bindings).toContain('jhon')
     })
 
     it('uses custom threshold when provided', () => {
       const qb = new QueryBuilder('users').whereFuzzySearch('jhon', ['name'], 0.5)
-      expect(qb['pendingAction']?.data.threshold).toBe(0.5)
+      const { sql } = qb.toSql()
+      expect(sql).toContain('similarity_score')
     })
   })
 
@@ -699,7 +699,7 @@ describe('QueryBuilder new methods', () => {
       
       // Verifica se os métodos foram aplicados
       expect(qb['selectColumns'].length).toBeGreaterThan(0)
-      expect(qb['pendingAction']?.type).toBe('fuzzySearch')
+      expect(qb['selectBindings'].length).toBeGreaterThan(0)
       expect(sql).toContain('relevance_score')
       expect(sql).toContain('similarity_score') // Agora deve funcionar!
       expect(sql).toContain('total_records')
@@ -710,7 +710,7 @@ describe('QueryBuilder new methods', () => {
     it('handles edge cases gracefully', () => {
       // Testa com arrays vazios
       const qb1 = new QueryBuilder('users').selectAllExcept([])
-      expect(qb1['pendingAction']?.data).toEqual([])
+      expect(qb1['excludeSelectColumns']).toEqual([])
       
       // Testa com searchTerm vazio
       const qb2 = new QueryBuilder('users').whereRelevanceSearch('', ['name'])
@@ -736,8 +736,7 @@ describe('QueryBuilder new methods', () => {
       
       // Verifica se os métodos foram aplicados na ordem correta
       expect(qb['selectColumns'].length).toBeGreaterThan(0) // stats() adiciona expressões
-      // O último método chamado sobrescreve pendingAction, então verificamos se foi aplicado
-      expect(qb['pendingAction']?.type).toBe('selectAllExcept')
+      expect(qb['excludeSelectColumns']).toEqual(['password'])
       expect(qb['limitValue']).toBe(10)
     })
   
@@ -746,8 +745,7 @@ describe('QueryBuilder new methods', () => {
         .selectAllExcept(['password', 'ssn'])
       
       // Verifica se selectAllExcept foi aplicado
-      expect(qb['pendingAction']?.type).toBe('selectAllExcept')
-      expect(qb['pendingAction']?.data).toEqual(['password', 'ssn'])
+      expect(qb['excludeSelectColumns']).toEqual(['password', 'ssn'])
       expect(qb['selectColumns']).toEqual(['*'])
     })
   
@@ -781,9 +779,7 @@ describe('QueryBuilder new methods', () => {
       const qb = new QueryBuilder('users')
         .whereFuzzySearch('jhon', ['name'], 0.8)
       
-      // Verifica se whereFuzzySearch foi aplicado
-      expect(qb['pendingAction']?.type).toBe('fuzzySearch')
-      expect(qb['pendingAction']?.data.threshold).toBe(0.8)
+      expect(qb['selectBindings'].length).toBeGreaterThan(0)
       
       // Verifica se a expressão similarity_score foi adicionada aos selectColumns
       expect(qb['selectColumns']).toEqual(

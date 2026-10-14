@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './config.js';
+export * from './querykit.js';
 export * from './table.js';
 export * from './raw.js';
 export * from './model.js';

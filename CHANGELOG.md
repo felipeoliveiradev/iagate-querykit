@@ -50,3 +50,15 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - README API catalog, packaging, and release notes aligned with the implementation.
 - `RELEASE.md` documents `NPM_TOKEN` and the publish workflow.
 - MIT `LICENSE` is included in the published tarball.
+
+### Structural (same 1.0.0, unpublished)
+
+- SQL compilation lives in `src/sql/compile.ts` (`compileSelect` / `compileWhere`). `QueryBuilder.toSql()` is a thin snapshot + compile call.
+- `createQueryKit(executor)` is the preferred entry: bound `table()` / `transaction()` / `close()` without the global `QueryKitConfig`.
+- `QueryBuilder` accepts `{ executor }` and `.use(executor)`.
+- Adapters share `loadOptionalPeer` / `asWrite` in `src/adapters/shared.ts`.
+- `selectAllExcept` no longer hijacks `pendingAction`; SQLite expands columns via `PRAGMA table_info`.
+- Fuzzy-search score placeholders are real bindings (`selectBindings`), not a leftover `pendingAction`.
+- `pluck` / `pluckSync` clone first; `scalar()` is async; `run()` refuses pending writes.
+- `BaseDatabaseAdapter.backup/restore/getConnectionInfo` throw instead of silently succeeding.
+- See `STUDY.md` for architecture, coverage (78.77% lines), and measured benchmarks.

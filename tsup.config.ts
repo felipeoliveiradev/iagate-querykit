@@ -12,6 +12,7 @@ const entry = {
   'parallel-query': 'src/parallel-query.ts',
   'database-adapters/base-adapter': 'src/database-adapters/base-adapter.ts',
   'database-manager': 'src/database-manager.ts',
+  querykit: 'src/querykit.ts',
   'query-builder': 'src/query-builder.ts',
   model: 'src/model.ts',
   table: 'src/table.ts',

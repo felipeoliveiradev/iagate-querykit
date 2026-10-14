@@ -1,22 +1,11 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { toPostgresParams } from '../sql/placeholders.js';
-import { isSelectLike } from '../sql/dialect.js';
-import { createRequire } from 'node:module';
+import { asWrite, loadOptionalPeer } from './shared.js';
 
 let pg: any;
 function ensurePg() {
   if (pg) return;
-  const mocked = (globalThis as any).__vitest_mocks__?.pg;
-  if (mocked) {
-    pg = mocked;
-    return;
-  }
-  try {
-    const req = createRequire(import.meta.url);
-    pg = req('pg');
-  } catch {
-    throw new Error('pg is required: npm install pg');
-  }
+  pg = loadOptionalPeer('pg', 'pg');
 }
 
 export type PostgresExecutorConfig = {
@@ -39,13 +28,6 @@ function mapResult(res: any): QueryResult {
     lastInsertId = rows[0].id ?? rows[0].ID;
   }
   return { data: rows, affectedRows, lastInsertId };
-}
-
-function asWrite(res: QueryResult): WriteResult {
-  return {
-    changes: res.affectedRows ?? 0,
-    lastInsertRowid: (res.lastInsertId as any) ?? 0,
-  };
 }
 
 export class PostgresExecutor implements DatabaseExecutor {

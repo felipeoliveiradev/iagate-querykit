@@ -23,3 +23,11 @@ export {
   countPlaceholders,
 } from './placeholders.js';
 export { escapeSqlLiteral, inlineBindings } from './literals.js';
+export {
+  compileSelect,
+  compileWhere,
+  type CompileState,
+  type CompileWhereClause,
+  type CompileJoin,
+  type CompileAggregate,
+} from './compile.js';

@@ -1,4 +1,5 @@
 import { QueryBuilder } from './query-builder.js';
+import type { DatabaseExecutor } from './types.js';
 
 /**
  * Factory function para criar QueryBuilders para uma tabela específica.
@@ -20,4 +21,7 @@ import { QueryBuilder } from './query-builder.js';
  * // users = [{ id: 1, name: 'John', active: true }, { id: 2, name: 'Jane', active: true }]
  * ```
  */
-export const table = <T extends Record<string, any>>(tableName: string) => new QueryBuilder<T>(tableName); 
+export const table = <T extends Record<string, any>>(
+  tableName: string,
+  executor?: DatabaseExecutor,
+) => new QueryBuilder<T>(tableName, executor ? { executor } : undefined); 

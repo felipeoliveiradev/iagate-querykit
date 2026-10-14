@@ -40,13 +40,13 @@ export abstract class BaseDatabaseAdapter implements DatabaseExecutor {
   }
 
   async backup(_destPath: string): Promise<void> {
-    return;
+    throw new Error('backup() is not implemented by this adapter');
   }
   async restore(_srcPath: string): Promise<void> {
-    return;
+    throw new Error('restore() is not implemented by this adapter');
   }
   async getConnectionInfo(): Promise<{ uptime: number; activeConnections: number }> {
-    return { uptime: 0, activeConnections: 0 };
+    throw new Error('getConnectionInfo() is not implemented by this adapter');
   }
 }
 

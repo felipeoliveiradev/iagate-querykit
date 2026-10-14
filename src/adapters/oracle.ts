@@ -1,21 +1,11 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { toOracleParams } from '../sql/placeholders.js';
-import { createRequire } from 'node:module';
+import { asWrite, loadOptionalPeer } from './shared.js';
 
 let oracledb: any;
 function ensureOracle() {
   if (oracledb) return;
-  const mocked = (globalThis as any).__vitest_mocks__?.oracledb;
-  if (mocked) {
-    oracledb = mocked;
-    return;
-  }
-  try {
-    const req = createRequire(import.meta.url);
-    oracledb = req('oracledb');
-  } catch {
-    throw new Error('oracledb is required: npm install oracledb');
-  }
+  oracledb = loadOptionalPeer('oracledb', 'oracledb');
 }
 
 export type OracleExecutorConfig = {
@@ -33,13 +23,6 @@ function mapOracle(res: any): QueryResult {
     data: rows,
     affectedRows: res?.rowsAffected,
     lastInsertId: res?.lastRowid,
-  };
-}
-
-function asWrite(res: QueryResult): WriteResult {
-  return {
-    changes: res.affectedRows ?? 0,
-    lastInsertRowid: (res.lastInsertId as any) ?? 0,
   };
 }
 

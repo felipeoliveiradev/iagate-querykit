@@ -1,6 +1,6 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { isSelectLike } from '../sql/dialect.js';
-import { createRequire } from 'node:module';
+import { loadOptionalPeer } from './shared.js';
 
 export type BetterSqlite3Database = any;
 
@@ -12,14 +12,7 @@ export type BetterSqlite3ExecutorOptions = {
 };
 
 function loadBetterSqlite3(): any {
-  const mocked = (globalThis as any).__vitest_mocks__?.betterSqlite3;
-  if (mocked) return mocked;
-  const req = createRequire(import.meta.url);
-  try {
-    return req('better-sqlite3');
-  } catch {
-    throw new Error('better-sqlite3 is required: npm install better-sqlite3');
-  }
+  return loadOptionalPeer('better-sqlite3', 'betterSqlite3');
 }
 
 export class BetterSqlite3Executor implements DatabaseExecutor {

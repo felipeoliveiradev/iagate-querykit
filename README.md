@@ -103,6 +103,19 @@ Works with `require` and `import`. TypeScript consumers can use `moduleResolutio
 
 ### Configure an executor
 
+Preferred (instance, no process-wide singleton):
+
+```ts
+import { createQueryKit } from 'iagate-querykit'
+import { BetterSqlite3Executor } from 'iagate-querykit/adapters/better-sqlite3'
+
+const kit = createQueryKit(new BetterSqlite3Executor('app.sqlite'))
+const users = await kit.table('users').where('active', '=', 1).all()
+await kit.close()
+```
+
+Global default (still supported):
+
 ```ts
 import { setDefaultExecutor } from 'iagate-querykit'
 import { BetterSqlite3Executor } from 'iagate-querykit/adapters/better-sqlite3'

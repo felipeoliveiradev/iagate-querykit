@@ -1,21 +1,11 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { isSelectLike } from '../sql/dialect.js';
-import { createRequire } from 'node:module';
+import { asWrite, loadOptionalPeer } from './shared.js';
 
 let mysql: any;
 function ensureMysql() {
   if (mysql) return;
-  const mocked = (globalThis as any).__vitest_mocks__?.mysql2;
-  if (mocked) {
-    mysql = mocked;
-    return;
-  }
-  try {
-    const req = createRequire(import.meta.url);
-    mysql = req('mysql2/promise');
-  } catch {
-    throw new Error('mysql2 is required: npm install mysql2');
-  }
+  mysql = loadOptionalPeer('mysql2/promise', 'mysql2');
 }
 
 export type MysqlExecutorConfig = {
@@ -48,13 +38,6 @@ function mapMysql(sql: string, rows: any, info: any): QueryResult {
     data: Array.isArray(rows) && !header.affectedRows ? rows : [],
     affectedRows: header.affectedRows,
     lastInsertId: header.insertId,
-  };
-}
-
-function asWrite(res: QueryResult): WriteResult {
-  return {
-    changes: res.affectedRows ?? 0,
-    lastInsertRowid: (res.lastInsertId as any) ?? 0,
   };
 }
 

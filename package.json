@@ -130,6 +130,17 @@
       },
       "default": "./dist/database-manager.js"
     },
+    "./querykit": {
+      "import": {
+        "types": "./dist/querykit.d.ts",
+        "default": "./dist/querykit.js"
+      },
+      "require": {
+        "types": "./dist/querykit.d.cts",
+        "default": "./dist/querykit.cjs"
+      },
+      "default": "./dist/querykit.js"
+    },
     "./query-builder": {
       "import": {
         "types": "./dist/query-builder.d.ts",
@@ -323,7 +334,8 @@
     "docs": "npm run docs:build",
     "api:docs": "typedoc",
     "docs:all": "npm run api:docs && npm run docs:build",
-    "consumer:verify": "node scripts/consumer-verify.mjs"
+    "consumer:verify": "node scripts/consumer-verify.mjs",
+    "bench": "node scripts/bench.mjs"
   },
   "author": "Felipe Oliveira <felipeoliveiradeveloper@gmail.com>",
   "license": "MIT",
@@ -348,10 +360,10 @@
   },
   "peerDependencies": {
     "better-sqlite3": "^11.0.0",
+    "mssql": "^11.0.0",
     "mysql2": "^3.0.0",
     "oracledb": "^6.0.0",
-    "pg": "^8.0.0",
-    "mssql": "^11.0.0"
+    "pg": "^8.0.0"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {
@@ -376,6 +388,7 @@
     "@docusaurus/theme-search-algolia": "^3.8.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.17.1",
+    "@vitest/coverage-v8": "^2.1.9",
     "better-sqlite3": "^11.10.0",
     "mysql2": "^3.14.1",
     "pg": "^8.16.0",
@@ -387,5 +400,8 @@
     "typedoc-plugin-markdown": "4.8.1",
     "typescript": "^5.4.0",
     "vitest": "^2.0.5"
+  },
+  "dependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.64.6"
   }
 }

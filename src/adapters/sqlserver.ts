@@ -1,21 +1,11 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { toMssqlParams } from '../sql/placeholders.js';
-import { createRequire } from 'node:module';
+import { asWrite, loadOptionalPeer } from './shared.js';
 
 let mssql: any;
 function ensureMssql() {
   if (mssql) return;
-  const mocked = (globalThis as any).__vitest_mocks__?.mssql;
-  if (mocked) {
-    mssql = mocked;
-    return;
-  }
-  try {
-    const req = createRequire(import.meta.url);
-    mssql = req('mssql');
-  } catch {
-    throw new Error('mssql is required: npm install mssql');
-  }
+  mssql = loadOptionalPeer('mssql', 'mssql');
 }
 
 export type SqlServerExecutorConfig = {
@@ -38,13 +28,6 @@ function mapMssql(res: any): QueryResult {
     lastInsertId = rows[0].id ?? rows[0].ID;
   }
   return { data: rows, affectedRows, lastInsertId };
-}
-
-function asWrite(res: QueryResult): WriteResult {
-  return {
-    changes: res.affectedRows ?? 0,
-    lastInsertRowid: (res.lastInsertId as any) ?? 0,
-  };
 }
 
 function bindRequest(pool: any, paramNames: string[], bindings: any[]): any {
