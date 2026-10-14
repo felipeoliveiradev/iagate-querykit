@@ -9,6 +9,8 @@ export type BetterSqlite3ExecutorOptions = {
   fileMustExist?: boolean;
   timeout?: number;
   verbose?: (...args: any[]) => void;
+  /** When true (default), integers that do not fit in JS number stay BigInt. */
+  safeIntegers?: boolean;
 };
 
 function loadBetterSqlite3(): any {
@@ -19,6 +21,7 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
   public readonly dialect = 'sqlite' as const;
   private db: BetterSqlite3Database;
   private ownsConnection: boolean;
+  private txDepth = 0;
 
   constructor(dbOrPath: string | BetterSqlite3Database, options?: BetterSqlite3ExecutorOptions) {
     if (typeof dbOrPath === 'string') {
@@ -33,6 +36,13 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
       this.db.pragma('foreign_keys = ON');
     } catch {
       /* older mocks */
+    }
+    if (options?.safeIntegers === true && typeof this.db.defaultSafeIntegers === 'function') {
+      try {
+        this.db.defaultSafeIntegers(true);
+      } catch {
+        /* mocks */
+      }
     }
     this.installMathHelpers();
   }
@@ -80,18 +90,22 @@ export class BetterSqlite3Executor implements DatabaseExecutor {
   }
 
   async transaction<T>(fn: (tx: DatabaseExecutor) => Promise<T>): Promise<T> {
-    this.db.exec('BEGIN');
+    const depth = this.txDepth++;
+    const sp = `qk_sp_${depth}`;
     try {
+      this.db.exec(depth === 0 ? 'BEGIN' : `SAVEPOINT ${sp}`);
       const result = await fn(this);
-      this.db.exec('COMMIT');
+      this.db.exec(depth === 0 ? 'COMMIT' : `RELEASE SAVEPOINT ${sp}`);
       return result;
     } catch (err) {
       try {
-        this.db.exec('ROLLBACK');
+        this.db.exec(depth === 0 ? 'ROLLBACK' : `ROLLBACK TO SAVEPOINT ${sp}`);
       } catch {
         /* ignore */
       }
       throw err;
+    } finally {
+      this.txDepth--;
     }
   }
 

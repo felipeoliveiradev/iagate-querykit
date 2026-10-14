@@ -22,8 +22,8 @@ describe('geo + full-text SQL (all dialects)', () => {
   it('whereFullText quotes columns and binds per dialect', () => {
     setDefaultExecutor(exec('sqlite') as any)
     const sqlite = new QueryBuilder('articles').whereFullText(['title', 'body'], 'querykit').toSql()
-    expect(sqlite.sql).toMatch(/"title" LIKE \? OR "body" LIKE \?/)
-    expect(sqlite.bindings).toEqual(['%querykit%', '%querykit%'])
+    expect(sqlite.sql).toMatch(/"articles" MATCH \?/)
+    expect(sqlite.bindings).toEqual(['{title body}: querykit'])
 
     setDefaultExecutor(exec('postgres') as any)
     const pg = new QueryBuilder('articles').whereFullText(['title', 'body'], 'querykit', 'english').toSql()
@@ -52,6 +52,7 @@ describe('geo + full-text SQL (all dialects)', () => {
     setDefaultExecutor(exec('sqlite') as any)
     expect(() => new QueryBuilder('articles').whereFullText([], 'x')).toThrow(/at least one column/)
     const { sql } = new QueryBuilder('articles').whereFullText(['title'], '   ').toSql()
+    expect(sql).not.toMatch(/MATCH/)
     expect(sql).not.toMatch(/LIKE/)
   })
 
@@ -91,7 +92,7 @@ describe('geo + full-text SQL (all dialects)', () => {
 describe('geo + full-text live SQLite', () => {
   let db: BetterSqlite3Executor
 
-  beforeEach(() => {
+  beforeEach(async () => {
     resetQueryKitConfig()
     db = new BetterSqlite3Executor(':memory:')
     setDefaultExecutor(db)
@@ -110,6 +111,14 @@ describe('geo + full-text live SQLite', () => {
         ('Osasco', 'warehouse', -23.5329, -46.7916),
         ('Lisbon', 'pastelaria', 38.7223, -9.1393)
     `)
+    const { createFts5VirtualTable, rebuildFts5Index } = await import('../sql/fts5.js')
+    await createFts5VirtualTable(db, {
+      name: 'places_fts',
+      columns: ['name', 'body'],
+      content: 'places',
+      contentRowid: 'id',
+    })
+    await rebuildFts5Index(db, 'places_fts')
   })
 
   afterEach(() => {
@@ -117,8 +126,8 @@ describe('geo + full-text live SQLite', () => {
     resetQueryKitConfig()
   })
 
-  it('whereFullText LIKE fallback finds tokens', async () => {
-    const rows = await new QueryBuilder('places').whereFullText(['name', 'body'], 'coffee').all<any>()
+  it('whereFullText FTS5 MATCH finds tokens', async () => {
+    const rows = await new QueryBuilder('places_fts').whereFullText(['name', 'body'], 'coffee').all<any>()
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe('Sao Paulo')
   })

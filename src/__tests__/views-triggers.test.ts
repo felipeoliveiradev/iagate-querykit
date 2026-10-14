@@ -268,6 +268,33 @@ describe('TriggerManager listTriggers dialect branches', () => {
   it('postgres', () => { setDefaultExecutor(new SyncExec('postgres', [{ tgname: 'tr' }]) as any); expect(new TriggerManager().listTriggers()).toContain('tr') })
   it('mssql', () => { setDefaultExecutor(new SyncExec('mssql', [{ name: 'tr' }]) as any); expect(new TriggerManager().listTriggers()).toContain('tr') })
   it('oracle', () => { setDefaultExecutor(new SyncExec('oracle', [{ name: 'tr' }]) as any); expect(new TriggerManager().listTriggers()).toContain('tr') })
+
+  it('unknown dialect keeps probing catalogs after an empty first hit', () => {
+    class Exec {
+      dialect = 'cockroach' as any
+      executeQuerySync(sql: string) {
+        if (/sqlite_master/.test(sql)) return { data: [] }
+        if (/INFORMATION_SCHEMA.TRIGGERS/.test(sql)) return { data: [{ name: 'tr_fb' }] }
+        return { data: [] }
+      }
+    }
+    setDefaultExecutor(new Exec() as any)
+    expect(new TriggerManager().listTriggers()).toContain('tr_fb')
+  })
+
+  it('undefined dialect async fallback skips failing catalogs', async () => {
+    class Exec {
+      dialect = undefined as any
+      async executeQuery(sql: string) {
+        if (/sqlite_master/.test(sql)) throw new Error('no sqlite')
+        if (/INFORMATION_SCHEMA.TRIGGERS/.test(sql)) throw new Error('no mysql')
+        if (/pg_trigger/.test(sql)) return { data: [{ tgname: 'tr_pg_fb' }] }
+        return { data: [] }
+      }
+    }
+    setDefaultExecutor(new Exec() as any)
+    expect(await new TriggerManager().listTriggersAsync()).toContain('tr_pg_fb')
+  })
 })
 
 describe('View/Trigger try/catch fallback chains and exists false', () => {

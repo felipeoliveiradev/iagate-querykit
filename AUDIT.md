@@ -174,7 +174,7 @@ These match the source audit and are addressed in 1.0.0.
 | TypeScript `moduleResolution: NodeNext` (`tsc` + emit + run) | **PASS** — `tsc ok`, `nodenext-ok nodenext@x.com` |
 | TypeScript `moduleResolution: bundler` (`tsc --noEmit`) | **PASS** — `tsc ok` |
 
-Re-verified this round: same six PASS rows. Local suite: **427 passed / 0 skipped / 38 files**. Coverage **95.73% lines / 90.14% branches / 91.06% functions**. Postgres 16 + MySQL 8 live on throwaway `127.0.0.1` `qk_e_*` (0 leftovers after). CI workflow starts Postgres 16 and MySQL 8 service containers so those tests run on PRs.
+Re-verified this round: same six PASS rows. Local suite: **464 passed / 0 skipped / 43 files**. Coverage **95.63% lines / 90.40% branches / 91.76% functions**. Live throwaway engines on `127.0.0.1`: Postgres 16, MySQL 8, SQL Server 2022, Oracle Free 23 (`qk_e_*` dropped, 0 leftovers). CI workflow starts Postgres 16 and MySQL 8; Oracle/MSSQL are `compose --profile full` (sequential, ~2 GiB each).
 
 ---
 
@@ -197,3 +197,23 @@ Re-verified this round: same six PASS rows. Local suite: **427 passed / 0 skippe
 | R3-13 | Medium | Extra-column `LIKE_CI` used case-sensitive `orWhere LIKE`. | FIXED (`orWhereILike`) | same |
 | R3-14 | Medium | `whereNearby` cannot run on stock SQLite (`acos`/`cos`/`sin` missing). | FIXED (register math helpers) | `src/__tests__/geo-fts.test.ts` + adapter |
 | R3-15 | Low | `whereILike` called `executor()` (throws if only `defaultDialect` is set). | FIXED (`this.dialect()`) | `src/__tests__/branch-coverage.test.ts` |
+
+---
+
+## 13. Round 4 findings (FTS5 / Oracle / MSSQL / bind limits / savepoints)
+
+| ID | Severity | Finding | Status | Covering test |
+| --- | --- | --- | --- | --- |
+| R4-1 | High | SQLite `whereFullText` used `LIKE %q%` (not FTS5). | FIXED (`MATCH` + `{cols}: q`) | `src/__tests__/fts5.test.ts`, `geo-fts.test.ts` |
+| R4-2 | High | Multi-row `insert` sent every row in one statement and blew dialect bind ceilings (SQLite 999, MSSQL 2100, PG 65535). | FIXED (chunk + `.maxBindings()`) | `src/__tests__/adversarial-round4.test.ts` |
+| R4-3 | High | Nested `transaction()` issued a second `BEGIN` on SQLite (and no savepoints on other adapters). | FIXED | same + live PG/MySQL/MSSQL/Oracle |
+| R4-4 | High | MySQL `DATETIME` rejected ISO-8601 `Date` bindings (`2024-01-01T00:00:00.000Z`). | FIXED (`mysqlBind`) | `src/__tests__/integration/mysql.test.ts` |
+| R4-5 | Medium | Postgres pool with `max=1` could hang forever on a second `transaction()`. | FIXED (`connectionTimeoutMillis` default 30s) | `src/__tests__/integration/postgres.test.ts` |
+| R4-6 | Medium | MySQL pool queued forever when `connectionLimit` was exhausted. | FIXED (config `waitForConnections` / `queueLimit`) | `src/__tests__/integration/mysql.test.ts` |
+| R4-7 | Medium | `migrateDown` `ctx.runSync` throw + delete-via-`executeQuery` were untested. | FIXED | `src/__tests__/migrations.test.ts` |
+| R4-8 | Medium | Trigger catalog `default` fallback returned `[]` on the first empty hit when `dialect` was unknown. | FIXED (keep probing) | `src/__tests__/views-triggers.test.ts` |
+| R4-9 | Medium | Large INTEGER / `bigint` lost precision on SQLite read (`Number`). | FIXED (opt-in `safeIntegers`) | `src/__tests__/adversarial-round4.test.ts` |
+| R4-10 | Low | Bind / insert failures were plain `Error` with no `code`. | FIXED (`BindError` / `InsertError` / `QueryKitError`) | same |
+| R4-11 | Info | Oracle/SQL Server had never been executed live in this VM. | FIXED (Docker + host network; sequential) | `src/__tests__/integration/mssql.test.ts`, `oracle.test.ts` |
+
+Hard rule: every live engine was `127.0.0.1` only. Ephemeral `qk_e_*` databases were dropped (0 leftovers). Ambient `DATABASE_URL` / `POSTGRES_*` / `MYSQL_*` ignored. Not published.

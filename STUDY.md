@@ -1,6 +1,6 @@
 # Estudo de arquitetura — iagate-querykit 1.0.0
 
-Estudo in-loco do repositório (branch `cursor/querykit-production-hardening-3f5f`), medido e remeido em 14 de outubro de 2026. Números de cobertura vêm do Vitest + `@vitest/coverage-v8@2.1.9` (427 testes). Números de desempenho vêm de `node scripts/bench.mjs` contra `better-sqlite3@11.10.0` em Node `v22.14.0`.
+Estudo in-loco do repositório (branch `cursor/querykit-production-hardening-3f5f`), medido e remeido em 14 de outubro de 2026. Números de cobertura vêm do Vitest + `@vitest/coverage-v8@2.1.9` (464 testes). Números de desempenho vêm de `node scripts/bench.mjs` contra `better-sqlite3@11.10.0` em Node `v22.14.0`.
 
 O pacote publicado hoje ainda é `0.1.46`. Esta árvore é o 1.0.0 **não publicado**. Depois do estudo, as melhorias estruturais listadas na seção 9 que eram claramente benéficas foram **implementadas neste PR**. A seção 10 descreve o que mudou, com números.
 
@@ -279,15 +279,15 @@ Não comparei contra Knex/Kysely neste run (não estão instalados). O número a
 
 Comando: `npx vitest run --coverage` (`@vitest/coverage-v8@2.1.9`).
 
-**Suite:** 427 passou, 0 pulados, 38 arquivos. Postgres e MySQL live em bancos throwaway `127.0.0.1` (`qk_e_*` criado e dropado).
+**Suite:** 464 passou, 0 pulados, 43 arquivos. Postgres, MySQL, SQL Server e Oracle live em bancos throwaway `127.0.0.1` (`qk_e_*` criado e dropado).
 
 **Totais (v8, `src/**/*.ts` excluindo testes e `src/types.ts` type-only):**
 
 | | % |
 | --- | ---: |
-| Linhas / statements | **95,73%** |
-| Branches | **90,14%** |
-| Funções | **91,06%** |
+| Linhas / statements | **95,63%** |
+| Branches | **90,40%** |
+| Funções | **91,76%** |
 
 ### Por arquivo (linhas)
 
@@ -308,11 +308,11 @@ Comando: `npx vitest run --coverage` (`@vitest/coverage-v8@2.1.9`).
 
 ### Áreas pouco testadas (residual)
 
-1. **Oracle / SQL Server live** — esta VM não tem `docker`; snapshots de SQL + mocks de pool/tx/close.
-2. Alguns ramos de `migration-manager` (`runSync` ausente) e `trigger-manager` (catálogo default).
-3. `whereFullText` no SQLite continua LIKE (não FTS5 virtual table).
+1. Oracle e SQL Server **rodaram live** nesta rodada, mas não ao mesmo tempo (RAM). Sem ambos no CI por padrão (`compose --profile full`).
+2. `DriverError` ainda não envolve automaticamente erros do driver (só está disponível para callers).
+3. FTS5 no SQLite exige a virtual table (não há mais fallback LIKE em tabela comum).
 
-Integração SQLite: 8 testes reais. Postgres/MySQL: live contra `CREATE DATABASE qk_e_*` no loopback, agora incluindo geo + full-text.
+Integração: SQLite `:memory:`, Postgres 16, MySQL 8, SQL Server 2022, Oracle Free 23 — todos throwaway no loopback.
 
 ---
 
@@ -484,6 +484,49 @@ Ver CHANGELOG / AUDIT §12 — 15 itens, cada um com teste de regressão.
 | Consumer verify | ESM, CJS, TS NodeNext, TS bundler — **PASS** |
 | Oracle/MSSQL live | **não** — `docker` ausente nesta VM; snapshots + mocks |
 | DBs tocados | só `127.0.0.1` Postgres 16 + MySQL 8 + SQLite `:memory:`; `qk_e_*` dropado (0 residual) |
+
+Não publicamos no npm.
+
+---
+
+## 13. Rodada 4 — FTS5, Oracle/MSSQL live, tetos de bind, savepoints
+
+Pedido: instalar Docker se possível e subir Oracle (`gvenzl/oracle-free`) + SQL Server (`mcr.microsoft.com/mssql/server`); FTS5 de verdade no SQLite; cobrir `runSync` das migrations e fallback do catálogo de triggers; passada adversarial (pool, savepoints, batches, Date/TZ, BigInt, BLOB, JSON, erros); testes de tipo; re-verificar o tarball.
+
+### Docker nesta VM
+
+`docker.io` 29.1.3 instalado via apt. `policy-rc.d` sai 101, então o systemd não sobe `docker.service`. `dockerd` foi iniciado à mão em `unix:///var/run/docker.sock` com `iptables:false` / `bridge:none` (conflito flag×daemon.json na primeira tentativa). Contêineres usam `--network host`.
+
+SQL Server 2022 e Oracle Free 23-slim-faststart **rodaram de verdade**, um de cada vez: a VM tinha ~4 GiB livres e cada imagem pede ~2 GiB. Juntos, OOM. Testes só em `127.0.0.1:1433` / `127.0.0.1:1521/FREEPDB1` com senhas inventadas (`QueryKit_123` / `QueryKit123`). Compose ganhou serviços sob `profile: full`.
+
+### O que mudou no código
+
+- `src/sql/fts5.ts` + `whereFullText` SQLite emite `"table" MATCH ?` com `{col1 col2}: query`.
+- `insert([...])` parte em chunks por `DIALECT_MAX_BIND_PARAMS` (999 / 32766 / 2100 / 65535). `.maxBindings(n)` sobrescreve.
+- Savepoints em todos os adapters. SQLite conta `txDepth`.
+- `QueryKitError` / `BindError` / `InsertError`. `UnsafeIdentifierError` herda `QueryKitError`.
+- MySQL: `mysqlBind` converte ISO-8601 UTC para `YYYY-MM-DD HH:MM:SS.mmm`.
+- Postgres `connectionTimeoutMillis` (30s). MySQL `waitForConnections` / `queueLimit`.
+- `BetterSqlite3Executor({ safeIntegers: true })` para INTEGER fora de `MAX_SAFE_INTEGER`.
+- Catálogo de triggers com dialect desconhecido continua sondando depois de um hit vazio.
+
+### Bugs desta rodada
+
+Ver AUDIT §13 — R4-1…R4-11, cada um com regressão.
+
+### Números
+
+| | |
+| --- | --- |
+| Testes | **464 passou / 0 pulados / 43 arquivos** |
+| Linhas | **95,63%** |
+| Branches | **90,40%** |
+| Funções | **91,76%** |
+| Typecheck | passou |
+| Consumer verify | ESM, CJS, TS NodeNext, TS bundler — **PASS** |
+| Oracle live | **sim** — `gvenzl/oracle-free:23-slim-faststart` em `--network host` |
+| SQL Server live | **sim** — `mcr.microsoft.com/mssql/server:2022-latest` em `--network host` |
+| DBs tocados | só `127.0.0.1` (PG 16, MySQL 8, SQLite `:memory:`, MSSQL 2022, Oracle Free 23); `qk_e_*` dropado (0 residual) |
 
 Não publicamos no npm.
 

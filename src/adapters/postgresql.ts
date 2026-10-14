@@ -1,6 +1,7 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { toPostgresParams } from '../sql/placeholders.js';
 import { asWrite, loadOptionalPeer } from './shared.js';
+import { runNestedSavepoint } from './savepoints.js';
 
 let pg: any;
 function ensurePg() {
@@ -18,6 +19,8 @@ export type PostgresExecutorConfig = {
   ssl?: boolean | object;
   poolSize?: number;
   pool?: any;
+  connectionTimeoutMillis?: number;
+  idleTimeoutMillis?: number;
 };
 
 function mapResult(res: any): QueryResult {
@@ -51,6 +54,8 @@ export class PostgresExecutor implements DatabaseExecutor {
         database: config.database,
         ssl: config.ssl,
         max: config.poolSize || 10,
+        connectionTimeoutMillis: config.connectionTimeoutMillis ?? 30_000,
+        idleTimeoutMillis: config.idleTimeoutMillis,
       });
       this.ownsPool = true;
     }
@@ -68,18 +73,23 @@ export class PostgresExecutor implements DatabaseExecutor {
 
   async transaction<T>(fn: (tx: DatabaseExecutor) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
-    const tx: DatabaseExecutor = {
-      dialect: 'postgres',
-      executeQuery: async (sql: string, bindings: any[] = []) => {
-        const text = toPostgresParams(sql);
-        return mapResult(await client.query({ text, values: bindings }));
-      },
-      run: async (sql: string, bindings: any[] = []) =>
-        asWrite(await tx.executeQuery(sql, bindings)),
+    const makeTx = (depth: number): DatabaseExecutor => {
+      const tx: DatabaseExecutor = {
+        dialect: 'postgres',
+        executeQuery: async (sql: string, bindings: any[] = []) => {
+          const text = toPostgresParams(sql);
+          return mapResult(await client.query({ text, values: bindings }));
+        },
+        run: async (sql: string, bindings: any[] = []) =>
+          asWrite(await tx.executeQuery(sql, bindings)),
+        transaction: (inner) =>
+          runNestedSavepoint('postgres', depth + 1, (sql) => client.query(sql), () => inner(makeTx(depth + 1))),
+      };
+      return tx;
     };
     try {
       await client.query('BEGIN');
-      const result = await fn(tx);
+      const result = await fn(makeTx(0));
       await client.query('COMMIT');
       return result;
     } catch (err) {

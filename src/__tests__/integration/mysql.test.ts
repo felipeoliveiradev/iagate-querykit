@@ -118,4 +118,54 @@ describe('mysql integration (throwaway loopback only)', () => {
     expect(admins).toHaveLength(1);
     expect(admins[0].email).toBe('a@example.test');
   });
+
+  it('nested savepoint, JSON/Date, and pool exhaustion', async () => {
+    await exec.executeQuery(
+      'CREATE TABLE qk_types (id INT PRIMARY KEY AUTO_INCREMENT, when_at DATETIME(3), meta JSON, blob_col BLOB, n_val BIGINT)',
+      [],
+    );
+    const when = new Date('2024-01-01T00:00:00.000Z');
+    await new QueryBuilder('qk_types').insert({
+      when_at: when,
+      meta: { tag: 'my' },
+      blob_col: Buffer.from('my-blob'),
+      n_val: 7,
+    }).make();
+    const row = await new QueryBuilder('qk_types').first<any>();
+    const parsed = typeof row.meta === 'string' ? JSON.parse(row.meta) : row.meta;
+    expect(parsed).toEqual({ tag: 'my' });
+    expect(Buffer.from(row.blob_col).equals(Buffer.from('my-blob'))).toBe(true);
+
+    await exec.transaction(async (tx) => {
+      await tx.executeQuery('INSERT INTO qk_extra (email, roles) VALUES (?, ?)', ['outer-my@example.test', 'x']);
+      await expect(
+        tx.transaction!(async (inner) => {
+          await inner.executeQuery('INSERT INTO qk_extra (email, roles) VALUES (?, ?)', ['inner-my@example.test', 'x']);
+          throw new Error('inner-fail');
+        }),
+      ).rejects.toThrow('inner-fail');
+    });
+    const kept = await exec.executeQuery("SELECT email FROM qk_extra WHERE email LIKE ?", ['%-my@example.test']);
+    const emails = kept.data.map((r: any) => r.email);
+    expect(emails).toContain('outer-my@example.test');
+    expect(emails).not.toContain('inner-my@example.test');
+
+    const { MysqlExecutor } = await import('../../adapters/mysql.js');
+    const tight = new MysqlExecutor({
+      host: '127.0.0.1',
+      port: 3306,
+      user: 'querykit',
+      password: 'querykit',
+      database: handle.database,
+      connectionLimit: 1,
+      waitForConnections: false,
+    });
+    try {
+      await tight.transaction(async () => {
+        await expect(tight.transaction(async () => 1)).rejects.toThrow(/limit|ER_CON_COUNT|queue|timeout|Exhausted|connect/i);
+      });
+    } finally {
+      await tight.close();
+    }
+  });
 });

@@ -90,3 +90,15 @@ Production hardening of `iagate-querykit`. This is a **breaking** release.
 - `whereRelevanceSearch` binds score placeholders. `whereFuzzySearch` validates threshold before mutating. `stats({ customColumns })` and `selectRowNumber` quote identifiers. `whereMultiSearch` honors `OR` and case-insensitive extra columns.
 - SQLite registers `acos`/`cos`/`sin`/`radians` so Haversine `whereNearby` executes.
 - Coverage: **95.73% lines / 90.14% branches / 91.06% functions** (427 tests). Packed tarball re-verified in ESM, CJS, TS NodeNext, and TS bundler consumers.
+
+### Round 4 — FTS5, live Oracle/MSSQL, bind limits, savepoints (same 1.0.0, unpublished)
+
+- SQLite `whereFullText` uses FTS5 `MATCH` with `{col}: query` column filters. Helpers: `fts5CreateSql` / `createFts5VirtualTable` / `fts5RebuildSql` / `fts5ContentSyncTriggersSql`.
+- Multi-row `insert([...])` chunks at the dialect bind ceiling (SQLite 999 / 32766 via `.maxBindings()`, MSSQL 2100, Postgres/MySQL/Oracle 65535).
+- Nested `transaction()` uses `SAVEPOINT` (SQLite/PG/MySQL), `SAVE TRANSACTION` (MSSQL), `SAVEPOINT` without RELEASE (Oracle). Inner rollback keeps outer work.
+- Typed errors: `QueryKitError`, `BindError`, `InsertError`, `UnsafeIdentifierError` (`code`).
+- MySQL adapter rewrites ISO-8601 UTC Date strings so `DATETIME` accepts them.
+- Postgres/MySQL pools expose `connectionTimeoutMillis` / `waitForConnections` so exhaustion fails instead of hanging.
+- Live throwaway SQL Server 2022 and Oracle Free 23 ran in this VM (`docker` + `--network host`). Both cannot share the 4 GiB leftover RAM; tests run sequentially.
+- `expectTypeOf` contracts for `QueryBuilder`, `createQueryKit`, adapters, and helpers.
+- Coverage: **95.63% lines / 90.40% branches / 91.76% functions** (464 tests). Packed tarball re-verified.

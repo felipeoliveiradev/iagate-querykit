@@ -1,10 +1,11 @@
 import type { SqlDialect } from './dialect.js';
+import { QueryKitError } from './errors.js';
 
 const IDENT_PART = /^(?:[\p{L}_][\p{L}\p{N}_]*|\*)$/u;
 
-export class UnsafeIdentifierError extends Error {
+export class UnsafeIdentifierError extends QueryKitError {
   constructor(message: string) {
-    super(message);
+    super(message, 'UNSAFE_IDENTIFIER');
     this.name = 'UnsafeIdentifierError';
   }
 }

@@ -120,4 +120,63 @@ describe('postgres integration (throwaway loopback only)', () => {
     const rows = await exec.executeQuery('SELECT * FROM qk_users WHERE email = $1', ['tx@example.test']);
     expect(rows.data.length).toBe(0);
   });
+
+  it('nested savepoint rolls back only the inner work', async () => {
+    await exec.transaction(async (tx) => {
+      await tx.executeQuery('INSERT INTO qk_users (email, active) VALUES (?, ?)', ['outer-pg@example.test', 1]);
+      await expect(
+        tx.transaction!(async (inner) => {
+          await inner.executeQuery('INSERT INTO qk_users (email, active) VALUES (?, ?)', ['inner-pg@example.test', 1]);
+          throw new Error('inner-fail');
+        }),
+      ).rejects.toThrow('inner-fail');
+    });
+    const kept = await exec.executeQuery('SELECT email FROM qk_users WHERE email LIKE $1', ['%-pg@example.test']);
+    const emails = kept.data.map((r: any) => r.email);
+    expect(emails).toContain('outer-pg@example.test');
+    expect(emails).not.toContain('inner-pg@example.test');
+  });
+
+  it('Date / JSON / large batch round-trip', async () => {
+    await exec.executeQuery(
+      'CREATE TABLE qk_types (id SERIAL PRIMARY KEY, when_at TIMESTAMPTZ, meta JSONB, blob_col BYTEA, n_val BIGINT)',
+      [],
+    );
+    const when = new Date('2024-01-01T00:00:00-03:00');
+    await new QueryBuilder('qk_types').insert({
+      when_at: when,
+      meta: { tag: 'pg' },
+      blob_col: Buffer.from('pg-blob'),
+      n_val: 42,
+    }).make();
+    const row = await new QueryBuilder('qk_types').first<any>();
+    expect(new Date(row.when_at).getTime()).toBe(when.getTime());
+    expect(row.meta).toEqual({ tag: 'pg' });
+    expect(Buffer.from(row.blob_col).equals(Buffer.from('pg-blob'))).toBe(true);
+
+    await exec.executeQuery('CREATE TABLE qk_batch (id SERIAL PRIMARY KEY, n INT)', []);
+    const rows = Array.from({ length: 250 }, (_, i) => ({ n: i }));
+    const ins = await new QueryBuilder('qk_batch').insert(rows).make();
+    expect(ins.changes).toBe(250);
+  });
+
+  it('pool exhaustion times out instead of hanging', async () => {
+    const { PostgresExecutor } = await import('../../adapters/postgresql.js');
+    const tight = new PostgresExecutor({
+      host: '127.0.0.1',
+      port: 5432,
+      user: 'querykit',
+      password: 'querykit',
+      database: handle.database,
+      poolSize: 1,
+      connectionTimeoutMillis: 800,
+    });
+    try {
+      await tight.transaction(async () => {
+        await expect(tight.transaction(async () => 1)).rejects.toThrow(/timeout|timeout exceeded|Connection terminated|remaining connection slots|sorry, too many|timeout/i);
+      });
+    } finally {
+      await tight.close();
+    }
+  });
 });

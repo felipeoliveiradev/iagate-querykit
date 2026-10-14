@@ -108,6 +108,20 @@ describe('adapter transaction + close (mocked drivers)', () => {
     await borrowedMysql.close()
   })
 
+  it('runNestedSavepoint emits SAVEPOINT / ROLLBACK TO / RELEASE', async () => {
+    const { runNestedSavepoint } = await import('../adapters/savepoints.js')
+    const calls: string[] = []
+    await expect(
+      runNestedSavepoint('postgres', 1, (sql) => { calls.push(sql) }, async () => {
+        throw new Error('inner')
+      }),
+    ).rejects.toThrow('inner')
+    expect(calls).toEqual(['SAVEPOINT qk_sp_1', 'ROLLBACK TO SAVEPOINT qk_sp_1'])
+    calls.length = 0
+    await runNestedSavepoint('postgres', 2, (sql) => { calls.push(sql) }, async () => 'ok')
+    expect(calls).toEqual(['SAVEPOINT qk_sp_2', 'RELEASE SAVEPOINT qk_sp_2'])
+  })
+
   it('oracle transaction commits / rolls back and close() closes an owned pool', async () => {
     const calls: string[] = []
     const conn = {

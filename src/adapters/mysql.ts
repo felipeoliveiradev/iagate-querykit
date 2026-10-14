@@ -1,6 +1,7 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { isSelectLike } from '../sql/dialect.js';
 import { asWrite, loadOptionalPeer } from './shared.js';
+import { runNestedSavepoint } from './savepoints.js';
 
 let mysql: any;
 function ensureMysql() {
@@ -18,6 +19,9 @@ export type MysqlExecutorConfig = {
   pool?: any;
   socketPath?: string;
   ssl?: any;
+  waitForConnections?: boolean;
+  queueLimit?: number;
+  connectTimeout?: number;
 };
 
 function mapMysql(sql: string, rows: any, info: any): QueryResult {
@@ -41,6 +45,17 @@ function mapMysql(sql: string, rows: any, info: any): QueryResult {
   };
 }
 
+/** MySQL DATETIME/TIMESTAMP reject ISO-8601 with `T`/`Z`; store the UTC wall clock. */
+export function mysqlBind(value: unknown): unknown {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)) {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toISOString().replace('T', ' ').replace('Z', '');
+    }
+  }
+  return value;
+}
+
 export class MysqlExecutor implements DatabaseExecutor {
   public readonly dialect = 'mysql' as const;
   private pool: any;
@@ -59,6 +74,9 @@ export class MysqlExecutor implements DatabaseExecutor {
         password: config.password,
         database: config.database,
         connectionLimit: config.connectionLimit || 10,
+        waitForConnections: config.waitForConnections !== false,
+        queueLimit: config.queueLimit ?? 0,
+        connectTimeout: config.connectTimeout,
         decimalNumbers: true,
         namedPlaceholders: false,
         socketPath: config.socketPath,
@@ -69,7 +87,7 @@ export class MysqlExecutor implements DatabaseExecutor {
   }
 
   async executeQuery(sql: string, bindings: any[] = []): Promise<QueryResult> {
-    const [rows, info] = await this.pool.execute(sql, bindings);
+    const [rows, info] = await this.pool.execute(sql, bindings.map(mysqlBind));
     return mapMysql(sql, rows, info);
   }
 
@@ -79,18 +97,23 @@ export class MysqlExecutor implements DatabaseExecutor {
 
   async transaction<T>(fn: (tx: DatabaseExecutor) => Promise<T>): Promise<T> {
     const conn = await this.pool.getConnection();
-    const tx: DatabaseExecutor = {
-      dialect: 'mysql',
-      executeQuery: async (sql: string, bindings: any[] = []) => {
-        const [rows, info] = await conn.execute(sql, bindings);
-        return mapMysql(sql, rows, info);
-      },
-      run: async (sql: string, bindings: any[] = []) =>
-        asWrite(await tx.executeQuery(sql, bindings)),
+    const makeTx = (depth: number): DatabaseExecutor => {
+      const tx: DatabaseExecutor = {
+        dialect: 'mysql',
+        executeQuery: async (sql: string, bindings: any[] = []) => {
+          const [rows, info] = await conn.execute(sql, bindings.map(mysqlBind));
+          return mapMysql(sql, rows, info);
+        },
+        run: async (sql: string, bindings: any[] = []) =>
+          asWrite(await tx.executeQuery(sql, bindings)),
+        transaction: (inner) =>
+          runNestedSavepoint('mysql', depth + 1, (sql) => conn.query(sql), () => inner(makeTx(depth + 1))),
+      };
+      return tx;
     };
     try {
       await conn.beginTransaction();
-      const result = await fn(tx);
+      const result = await fn(makeTx(0));
       await conn.commit();
       return result;
     } catch (err) {

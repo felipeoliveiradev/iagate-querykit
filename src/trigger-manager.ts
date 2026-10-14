@@ -609,14 +609,15 @@ export class TriggerManager {
   public listTriggers(): string[] {
     const exec = getExec();
     if (!exec.executeQuerySync) return [];
-    const dialect = dialectOf(exec);
+    const dialect = exec.dialect;
     const candidates = this.triggerQueriesByDialect(dialect);
+    const known = Boolean(dialect && ['sqlite', 'mysql', 'postgres', 'mssql', 'oracle'].includes(dialect));
     for (const c of candidates) {
       try {
         const res = exec.executeQuerySync(c.sql, []);
         const rows = (res?.data as any[]) || [];
         const names = rows.map(c.map).filter(Boolean);
-        if (exec.dialect || names.length) return names;
+        if (known || names.length) return names;
       } catch { /* try next */ }
     }
     return [];
@@ -630,14 +631,15 @@ export class TriggerManager {
   public async listTriggersAsync(): Promise<string[]> {
     const exec = getExec();
     if (exec.executeQuerySync) return this.listTriggers();
-    const dialect = dialectOf(exec);
+    const dialect = exec.dialect;
     const candidates = this.triggerQueriesByDialect(dialect);
+    const known = Boolean(dialect && ['sqlite', 'mysql', 'postgres', 'mssql', 'oracle'].includes(dialect));
     for (const c of candidates) {
       try {
         const res = await exec.executeQuery(c.sql, []);
         const rows = (res?.data as any[]) || [];
         const names = rows.map(c.map).filter(Boolean);
-        if (exec.dialect || names.length) return names;
+        if (known || names.length) return names;
       } catch { /* try next */ }
     }
     return [];

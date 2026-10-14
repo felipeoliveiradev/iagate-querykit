@@ -1,6 +1,7 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { toOracleParams } from '../sql/placeholders.js';
 import { asWrite, loadOptionalPeer } from './shared.js';
+import { runNestedSavepoint } from './savepoints.js';
 
 let oracledb: any;
 function ensureOracle() {
@@ -78,21 +79,33 @@ export class OracleExecutor implements DatabaseExecutor {
   async transaction<T>(fn: (tx: DatabaseExecutor) => Promise<T>): Promise<T> {
     const pool = await this.getPool();
     const conn = await pool.getConnection();
-    const tx: DatabaseExecutor = {
-      dialect: 'oracle',
-      executeQuery: async (sql: string, bindings: any[] = []) => {
-        const text = toOracleParams(sql);
-        const res = await conn.execute(text, bindings, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-          autoCommit: false,
-        });
-        return mapOracle(res);
-      },
-      run: async (sql: string, bindings: any[] = []) =>
-        asWrite(await tx.executeQuery(sql, bindings)),
+    const makeTx = (depth: number): DatabaseExecutor => {
+      const tx: DatabaseExecutor = {
+        dialect: 'oracle',
+        executeQuery: async (sql: string, bindings: any[] = []) => {
+          const text = toOracleParams(sql);
+          const res = await conn.execute(text, bindings, {
+            outFormat: oracledb.OUT_FORMAT_OBJECT,
+            autoCommit: false,
+          });
+          return mapOracle(res);
+        },
+        run: async (sql: string, bindings: any[] = []) =>
+          asWrite(await tx.executeQuery(sql, bindings)),
+        transaction: (inner) =>
+          runNestedSavepoint(
+            'oracle',
+            depth + 1,
+            async (sql) => {
+              await conn.execute(sql);
+            },
+            () => inner(makeTx(depth + 1)),
+          ),
+      };
+      return tx;
     };
     try {
-      const result = await fn(tx);
+      const result = await fn(makeTx(0));
       await conn.commit();
       return result;
     } catch (err) {

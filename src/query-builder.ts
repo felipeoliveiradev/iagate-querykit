@@ -8,10 +8,15 @@ import { returningInsertSql } from './sql/dialect.js';
 import { quoteIdent, quoteSelectItem, quoteTableRef, isSqlExpression } from './sql/identifiers.js';
 import { compileSelect, compileWhere, combineWhere, type CompileState } from './sql/compile.js';
 import { normalizeBinding, normalizeBindings } from './sql/bindings.js';
+import { maxBindParams, chunkRowsByBindLimit } from './sql/bind-limits.js';
+import { fts5MatchQuery } from './sql/fts5.js';
+import { InsertError } from './sql/errors.js';
 import { attachRelations } from './relations-resolver.js';
 
 export type QueryBuilderOptions = {
   executor?: DatabaseExecutor;
+  /** Override the dialect bind-parameter ceiling used to chunk multi-row inserts. */
+  maxBindings?: number;
 };
 
 /**
@@ -125,6 +130,7 @@ export class QueryBuilder<T = any> {
   private trackingLogs: { step: string; details: any; timestamp: Date }[] = [];
   private virtualTable: T[] = [];
   private includeAllRelations: boolean | RelationshipSelector<T> = false
+  private bindParamLimit?: number;
 
   /**
    * Construtor da classe QueryBuilder.
@@ -147,6 +153,20 @@ export class QueryBuilder<T = any> {
   constructor(tableName: string, options?: QueryBuilderOptions) {
     this.tableName = tableName;
     this.boundExecutor = options?.executor;
+    if (options?.maxBindings != null) this.maxBindings(options.maxBindings);
+  }
+
+  /**
+   * Override the per-statement bind-parameter ceiling used to chunk
+   * multi-row `insert([...])`. Defaults: SQLite 999, MSSQL 2100, others 65535.
+   * Pass `32766` for modern SQLite (`SQLITE_MAX_VARIABLE_NUMBER`).
+   */
+  maxBindings(n: number): this {
+    if (!Number.isInteger(n) || n < 1) {
+      throw new InsertError('maxBindings() requires a positive integer');
+    }
+    this.bindParamLimit = n;
+    return this;
   }
 
   private executor(): DatabaseExecutor {
@@ -7146,23 +7166,38 @@ export class QueryBuilder<T = any> {
     switch (type) {
       case 'insert': {
         const rows: Record<string, any>[] = Array.isArray(data) ? data : [data];
-        if (!rows.length) throw new Error('insert() requires at least one row');
+        if (!rows.length) throw new InsertError('insert() requires at least one row');
         const columns = Object.keys(rows[0]!);
-        if (!columns.length) throw new Error('insert() row has no columns');
+        if (!columns.length) throw new InsertError('insert() row has no columns');
         for (const row of rows) {
           const keys = Object.keys(row);
           if (keys.length !== columns.length || keys.some((k) => !columns.includes(k))) {
-            throw new Error('insert() rows must share the same columns');
+            throw new InsertError('insert() rows must share the same columns');
           }
         }
+        const limit = this.bindParamLimit ?? maxBindParams(dialect);
+        if (columns.length > limit) {
+          throw new InsertError(
+            `insert() row has ${columns.length} columns, exceeding the ${dialect} bind limit of ${limit}`,
+          );
+        }
+        const chunks = chunkRowsByBindLimit(rows, columns.length, limit);
         const quotedCols = columns.map((c) => this.qIdent(c)).join(', ');
         const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
-        const placeholders = rows.map(() => rowPlaceholder).join(', ');
-        const values = rows.flatMap((row) => columns.map((c) => normalizeBinding(row[c])));
-        let sql = `INSERT INTO ${this.qTable()} (${quotedCols}) VALUES ${placeholders}`;
-        sql = returningInsertSql(sql, dialect);
         eventManager.emit(`querykit:trigger:BEFORE:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'BEFORE', data: rows, where: undefined, qb: qbHelper } as any);
-        const mapped = await runOn(exec, sql, values);
+        let changes = 0;
+        let lastInsertRowid: number | bigint = 0;
+        let mapped: WriteResult = { changes: 0, lastInsertRowid: 0 };
+        for (const chunk of chunks) {
+          const placeholders = chunk.map(() => rowPlaceholder).join(', ');
+          const values = chunk.flatMap((row) => columns.map((c) => normalizeBinding(row[c])));
+          let sql = `INSERT INTO ${this.qTable()} (${quotedCols}) VALUES ${placeholders}`;
+          sql = returningInsertSql(sql, dialect);
+          mapped = await runOn(exec, sql, values);
+          changes += Number(mapped.changes ?? 0);
+          lastInsertRowid = mapped.lastInsertRowid ?? lastInsertRowid;
+        }
+        mapped = { changes, lastInsertRowid };
         eventManager.emit(`querykit:trigger:AFTER:INSERT:${this.tableName}`, { table: this.tableName, action: 'INSERT', timing: 'AFTER', data: rows, result: mapped, qb: qbHelper } as any);
         this.pendingAction = undefined;
         return mapped;
@@ -7642,8 +7677,9 @@ export class QueryBuilder<T = any> {
       sql = `(${cols.map((c) => `CONTAINS(${c}, ?)`).join(' OR ')})`;
       values = cols.map(() => query);
     } else {
-      sql = `(${cols.map((c) => `${c} LIKE ?`).join(' OR ')})`;
-      values = cols.map(() => `%${query}%`);
+      // SQLite FTS5: MATCH is on the virtual table, with optional column filter.
+      sql = `${this.qTable()} MATCH ?`;
+      values = [fts5MatchQuery(columns.map(String), query)];
     }
 
     this.whereClauses.push({ type: 'raw', sql, logical: 'AND', value: values });

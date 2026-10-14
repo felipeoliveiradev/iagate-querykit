@@ -379,4 +379,81 @@ describe('MigrationManager', () => {
       expect(sql).toMatch(/SELECT 1/)
     }
   })
+
+  it('ctx.runSync throws when the executor has no runSync (down path)', async () => {
+    class AsyncOnly {
+      dialect = 'sqlite' as const
+      migrations: string[] = []
+      async executeQuery(sql: string, bindings: any[] = []) {
+        if (/CREATE TABLE IF NOT EXISTS querykit_migrations/.test(sql)) return { data: [] }
+        if (/INSERT INTO querykit_migrations/.test(sql)) { this.migrations.push(bindings[0]); return { data: [] } }
+        if (/SELECT id FROM querykit_migrations/.test(sql)) return { data: this.migrations.map(id => ({ id })) }
+        if (/DELETE FROM querykit_migrations/.test(sql)) { this.migrations = this.migrations.filter(id => id !== bindings[0]); return { data: [] } }
+        if (/DROP TABLE IF EXISTS querykit_migrations/.test(sql)) { this.migrations = []; return { data: [] } }
+        return { data: [] }
+      }
+    }
+    const ex = new AsyncOnly()
+    setDefaultExecutor(ex as any)
+    await resetMigrations({ executor: ex as any })
+    await migrateUp([{ id: 'fn_sync', up: 'SELECT 1' }], { executor: ex as any })
+    await expect(
+      migrateDown([{ id: 'fn_sync', up: 'SELECT 1', down: (ctx) => { ctx.runSync('DROP TABLE t') } }], { executor: ex as any }),
+    ).rejects.toThrow(/runSync not supported/)
+  })
+
+  it('migrateDown records delete via executeQuery when runSync is absent', async () => {
+    class AsyncOnly {
+      dialect = 'sqlite' as const
+      migrations: string[] = []
+      calls: string[] = []
+      async executeQuery(sql: string, bindings: any[] = []) {
+        this.calls.push(sql)
+        if (/CREATE TABLE IF NOT EXISTS querykit_migrations/.test(sql)) return { data: [] }
+        if (/INSERT INTO querykit_migrations/.test(sql)) { this.migrations.push(bindings[0]); return { data: [] } }
+        if (/SELECT id FROM querykit_migrations/.test(sql)) return { data: this.migrations.map(id => ({ id })) }
+        if (/DELETE FROM querykit_migrations/.test(sql)) { this.migrations = this.migrations.filter(id => id !== bindings[0]); return { data: [] } }
+        if (/DROP TABLE IF EXISTS querykit_migrations/.test(sql)) { this.migrations = []; return { data: [] } }
+        return { data: [] }
+      }
+    }
+    const ex = new AsyncOnly()
+    setDefaultExecutor(ex as any)
+    await resetMigrations({ executor: ex as any })
+    await migrateUp([{ id: 'd1', up: 'SELECT 1', down: 'DROP TABLE t' }], { executor: ex as any })
+    const res = await migrateDown([{ id: 'd1', up: 'SELECT 1', down: 'DROP TABLE t' }], { executor: ex as any })
+    expect(res.reverted).toEqual(['d1'])
+    expect(ex.calls.some((s) => /DELETE FROM querykit_migrations/.test(s))).toBe(true)
+    expect(await listAppliedMigrations(ex as any)).toEqual([])
+  })
+
+  it('migrateDown delete prefers runSync when present', async () => {
+    class WithSync {
+      dialect = 'sqlite' as const
+      migrations: string[] = []
+      syncCalls: string[] = []
+      executeQuerySync(sql: string, bindings: any[] = []) {
+        if (/SELECT id FROM querykit_migrations/.test(sql)) return { data: this.migrations.map(id => ({ id })) }
+        return { data: [] }
+      }
+      async executeQuery(sql: string, bindings: any[] = []) {
+        if (/SELECT id FROM querykit_migrations/.test(sql)) return { data: this.migrations.map(id => ({ id })) }
+        return { data: [] }
+      }
+      runSync(sql: string, bindings: any[] = []) {
+        this.syncCalls.push(sql)
+        if (/INSERT INTO querykit_migrations/.test(sql)) this.migrations.push(bindings[0])
+        if (/DELETE FROM querykit_migrations/.test(sql)) this.migrations = this.migrations.filter(id => id !== bindings[0])
+        if (/DROP TABLE IF EXISTS querykit_migrations/.test(sql)) this.migrations = []
+        return { changes: 1, lastInsertRowid: 0 }
+      }
+    }
+    const ex = new WithSync()
+    setDefaultExecutor(ex as any)
+    await resetMigrations({ executor: ex as any })
+    await migrateUp([{ id: 's1', up: 'SELECT 1', down: 'DROP TABLE t' }], { executor: ex as any })
+    const res = await migrateDown([{ id: 's1', up: 'SELECT 1', down: 'DROP TABLE t' }], { executor: ex as any })
+    expect(res.reverted).toEqual(['s1'])
+    expect(ex.syncCalls.some((s) => /DELETE FROM querykit_migrations/.test(s))).toBe(true)
+  })
 }) 

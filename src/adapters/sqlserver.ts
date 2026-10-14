@@ -1,6 +1,7 @@
 import type { DatabaseExecutor, QueryResult, WriteResult } from '../types.js';
 import { toMssqlParams } from '../sql/placeholders.js';
 import { asWrite, loadOptionalPeer } from './shared.js';
+import { runNestedSavepoint } from './savepoints.js';
 
 let mssql: any;
 function ensureMssql() {
@@ -78,21 +79,33 @@ export class SqlServerExecutor implements DatabaseExecutor {
     const pool = await this.poolPromise;
     const transaction = new mssql.Transaction(pool);
     await transaction.begin();
-    const tx: DatabaseExecutor = {
-      dialect: 'mssql',
-      executeQuery: async (sql: string, bindings: any[] = []) => {
-        const { sql: text, paramNames } = toMssqlParams(sql);
-        const request = new mssql.Request(transaction);
-        paramNames.forEach((name, idx) => {
-          request.input(name, bindings[idx]);
-        });
-        return mapMssql(await request.query(text));
-      },
-      run: async (sql: string, bindings: any[] = []) =>
-        asWrite(await tx.executeQuery(sql, bindings)),
+    const execOnTx = async (sql: string, bindings: any[] = []) => {
+      const { sql: text, paramNames } = toMssqlParams(sql);
+      const request = new mssql.Request(transaction);
+      paramNames.forEach((name, idx) => {
+        request.input(name, bindings[idx]);
+      });
+      return mapMssql(await request.query(text));
+    };
+    const makeTx = (depth: number): DatabaseExecutor => {
+      const tx: DatabaseExecutor = {
+        dialect: 'mssql',
+        executeQuery: execOnTx,
+        run: async (sql: string, bindings: any[] = []) => asWrite(await execOnTx(sql, bindings)),
+        transaction: (inner) =>
+          runNestedSavepoint(
+            'mssql',
+            depth + 1,
+            async (sql) => {
+              await execOnTx(sql, []);
+            },
+            () => inner(makeTx(depth + 1)),
+          ),
+      };
+      return tx;
     };
     try {
-      const result = await fn(tx);
+      const result = await fn(makeTx(0));
       await transaction.commit();
       return result;
     } catch (err) {
